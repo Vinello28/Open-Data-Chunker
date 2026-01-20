@@ -1,0 +1,11 @@
+services:
+  etl:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./public:/app/public
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Mantieni il container attivo per debugging o esecuzione comandi
+    command: [ "tail", "-f", "/dev/null" ]
+    # Per eseguire comandi specifici: docker compose run --rm etl ...

@@ -1,0 +1,20 @@
+[project]
+name = "opendata-chunker"
+version = "0.1.0"
+description = "ETL pipeline for RNA OpenData XML files"
+authors = [
+    {name = "Gabs", email = "gabs@example.com"},
+]
+dependencies = [
+    "lxml",
+    "polars",
+    "pyarrow",
+    "click",
+    "duckdb",
+    "tqdm",
+]
+requires-python = ">=3.12"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
