@@ -5,6 +5,9 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Polars](https://img.shields.io/badge/Polars-Running_Fast-blue?style=flat&logo=polars&logoColor=white)](https://pola.rs/)
+[![DuckDB](https://img.shields.io/badge/DuckDB-Analytical_SQL-fff000?style=flat&logo=duckdb&logoColor=black)](https://duckdb.org/)
+[![Parquet](https://img.shields.io/badge/Format-Apache%20Parquet-C41E3A?style=flat&logo=apache&logoColor=white)](https://parquet.apache.org/)
 
 A high-performance ETL pipeline for processing large-scale XML datasets from the Italian RNA (Registro Nazionale degli Aiuti) Open Data. Transforms XML files into optimized, year-partitioned Parquet format with built-in query and export capabilities.
 
@@ -158,6 +161,7 @@ docker compose run --rm etl python -m src.cli export \
   --format csv \
   --output public/exports/aiuti.csv
 
+
 # Export with pipe delimiter
 docker compose run --rm etl python -m src.cli export \
   --table strumenti \
@@ -165,6 +169,32 @@ docker compose run --rm etl python -m src.cli export \
   --delimiter "|" \
   --output public/exports/strumenti.txt
 ```
+
+### `export-aggregated` — Export Aggregated Year-by-Year Data
+
+Generates a specialized CSV export where each row corresponds to a single Aid ("Aiuto") with aggregated metrics from its Components and Instruments.
+**Features**:
+- Automatically handles join between Aiuti, Componenti, and Strumenti
+- Calculates total `IMPORTO_NOMINALE` and `ELEMENTO_DI_AIUTO` per Aid
+- Counts components and instruments
+- Concatenates multiple ATECO codes (`|` separated)
+- **Processes one year at a time** to optimize memory usage
+- Outputs one CSV file per year (e.g., `export_2024.csv`, `export_2023.csv`)
+
+```bash
+docker compose run --rm etl python -m src.cli export-aggregated [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-o, --output` | Output file path (used as prefix) | required |
+| `-d, --delimiter` | Field delimiter | `,` |
+
+**Example:**
+```bash
+docker compose run --rm etl python -m src.cli export-aggregated --output public/exports/aggregated.csv
+```
+This will generate `public/exports/aggregated_2024.csv`, `public/exports/aggregated_2023.csv`, etc.
 
 ## 📁 Project Structure
 
