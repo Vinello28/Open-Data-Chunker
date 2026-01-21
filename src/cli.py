@@ -7,7 +7,7 @@ import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 from .parser import process_file
-from .exporter import export_dataset, run_query
+from .exporter import export_dataset, run_query, export_aggregated_dataset
 
 # Configuration logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,6 +26,13 @@ def parse(input, output, workers):
     """Parse XML files and convert to Parquet"""
     input_path = Path(input)
     output_path = Path(output)
+    
+    # Pulizia preventiva della cartella di output per evitare conflitti di schema o dati misti
+    if output_path.exists():
+        logger.info(f"Cleaning output directory {output_path}...")
+        import shutil
+        shutil.rmtree(output_path)
+    
     output_path.mkdir(parents=True, exist_ok=True)
     
     files = []
@@ -93,6 +100,13 @@ def query(table, query, limit):
 def export(table, format, output, delimiter):
     """Export dataset to CSV or TXT"""
     export_dataset(table, format, output, delimiter)
+
+@cli.command()
+@click.option('--output', '-o', required=True, help='Output CSV file path')
+@click.option('--delimiter', '-d', default=',', help='Delimiter for CSV')
+def export_aggregated(output, delimiter):
+    """Export aggregated dataset (AIUTI + COMP + STRUM) to CSV"""
+    export_aggregated_dataset(output, delimiter)
 
 if __name__ == '__main__':
     cli()

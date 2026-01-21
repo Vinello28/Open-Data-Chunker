@@ -10,6 +10,10 @@ SCHEMA_AIUTI = pa.schema([
     ('CODICE_FISCALE_BENEFICIARIO', pa.string()),
     ('DENOMINAZIONE_BENEFICIARIO', pa.string()),
     ('TITOLO_PROGETTO', pa.string()),
+    ('DESCRIZIONE_PROGETTO', pa.string()),  # New field
+    ('CUP', pa.string()),                   # New field
+    ('REGIONE_BENEFICIARIO', pa.string()),  # New field
+    ('DES_TIPO_BENEFICIARIO', pa.string()), # New field
     ('COR', pa.string()),
     ('DATA_CONCESSIONE', pa.string()),  # Convertito poi in date
     ('ANNO', pa.int32()),  # Partizione
