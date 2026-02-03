@@ -1,0 +1,152 @@
+\chapter{Modello Dati}
+
+\section{Struttura Gerarchica XML}
+
+I file XML dell'RNA presentano una struttura gerarchica a tre livelli:
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    level 1/.style={sibling distance=5cm, level distance=1.5cm},
+    level 2/.style={sibling distance=3cm, level distance=1.5cm},
+    every node/.style={rectangle, rounded corners, draw, fill=primaryblue!10, minimum width=2.5cm, minimum height=0.8cm, font=\small}
+]
+\node {AIUTO}
+    child {node {COMPONENTE\_1}
+        child {node {STRUM\_1}}
+        child {node {STRUM\_2}}
+    }
+    child {node {COMPONENTE\_2}
+        child {node {STRUM\_3}}
+    };
+\end{tikzpicture}
+\caption{Struttura gerarchica dei dati RNA}
+\end{figure}
+
+\section{Normalizzazione in Tre Tabelle}
+
+Il parser trasforma la struttura gerarchica in tre tabelle relazionali normalizzate:
+
+\subsection{Tabella AIUTI}
+
+Entità principale contenente le informazioni sul contributo:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Campo} & \textbf{Tipo} & \textbf{Descrizione} \\
+\midrule
+CAR & string & Codice Aiuto Regionale (PK logica) \\
+COR & string & Codice Operazione Registro \\
+TITOLO\_MISURA & string & Denominazione del bando \\
+DATA\_CONCESSIONE & string & Data di erogazione \\
+DENOMINAZIONE\_BENEFICIARIO & string & Ragione sociale beneficiario \\
+CODICE\_FISCALE\_BENEFICIARIO & string & CF/P.IVA \\
+REGIONE\_BENEFICIARIO & string & Regione di appartenenza \\
+CUP & string & Codice Unico Progetto \\
+ANNO & int32 & Partizione temporale \\
+FILE\_SOURCE & string & Tracciabilità file sorgente \\
+\bottomrule
+\end{tabular}
+\caption{Schema tabella AIUTI}
+\end{table}
+
+\subsection{Tabella COMPONENTI}
+
+Dettaglio delle componenti di aiuto, in relazione 1:N con AIUTI:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Campo} & \textbf{Tipo} & \textbf{Descrizione} \\
+\midrule
+ID\_COMPONENTE\_AIUTO & string & Identificativo componente (PK) \\
+CAR\_AIUTO & string & FK verso AIUTI.CAR \\
+COR\_AIUTO & string & FK verso AIUTI.COR \\
+COD\_REGOLAMENTO & string & Regolamento UE applicato \\
+SETTORE\_ATTIVITA & string & Codice ATECO \\
+ANNO & int32 & Partizione \\
+\bottomrule
+\end{tabular}
+\caption{Schema tabella COMPONENTI}
+\end{table}
+
+\subsection{Tabella STRUMENTI}
+
+Strumenti finanziari applicati, in relazione 1:N con COMPONENTI:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Campo} & \textbf{Tipo} & \textbf{Descrizione} \\
+\midrule
+ID\_COMPONENTE\_AIUTO & string & FK verso COMPONENTI \\
+COD\_STRUMENTO & string & Codice strumento finanziario \\
+IMPORTO\_NOMINALE & float64 & Valore nominale contributo \\
+ELEMENTO\_DI\_AIUTO & float64 & Equivalente sovvenzione \\
+ANNO & int32 & Partizione \\
+\bottomrule
+\end{tabular}
+\caption{Schema tabella STRUMENTI}
+\end{table}
+
+\section{Diagramma ER}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    entity/.style={rectangle, draw, fill=primaryblue!20, minimum width=3cm, minimum height=1.5cm, font=\bfseries},
+    relationship/.style={diamond, draw, fill=warnorange!30, minimum width=1.5cm, aspect=2},
+    scale=0.9, transform shape
+]
+    \node[entity] (aiuti) at (0,0) {AIUTI};
+    \node[entity] (comp) at (5,0) {COMPONENTI};
+    \node[entity] (strum) at (10,0) {STRUMENTI};
+    
+    \node[relationship] (r1) at (2.5,0) {1:N};
+    \node[relationship] (r2) at (7.5,0) {1:N};
+    
+    \draw[-] (aiuti) -- (r1);
+    \draw[-] (r1) -- (comp);
+    \draw[-] (comp) -- (r2);
+    \draw[-] (r2) -- (strum);
+    
+    \node[below=0.3cm of aiuti, font=\small\ttfamily] {CAR, COR};
+    \node[below=0.3cm of comp, font=\small\ttfamily] {ID\_COMPONENTE};
+    \node[below=0.3cm of strum, font=\small\ttfamily] {IMPORTO, ELEMENTO};
+\end{tikzpicture}
+\caption{Diagramma ER delle tabelle normalizzate}
+\end{figure}
+
+\section{Partizionamento Hive-Style}
+
+L'output è organizzato con \textbf{Hive-style partitioning} sulla colonna \texttt{ANNO}:
+
+\begin{lstlisting}[language=bash, caption=Struttura directory output]
+public/parquet/
+    aiuti/
+        ANNO=2022/
+            part-0.parquet
+            part-1.parquet
+        ANNO=2023/
+            part-0.parquet
+    componenti/
+        ANNO=2022/
+        ANNO=2023/
+    strumenti/
+        ANNO=2022/
+        ANNO=2023/
+\end{lstlisting}
+
+Questo layout consente:
+\begin{itemize}
+    \item \textbf{Partition pruning}: query filtrate per anno leggono solo le partizioni rilevanti
+    \item \textbf{Parallelismo}: file distinti possono essere letti concorrentemente
+    \item \textbf{Gestibilità}: facile eliminazione o aggiornamento di singoli anni
+\end{itemize}

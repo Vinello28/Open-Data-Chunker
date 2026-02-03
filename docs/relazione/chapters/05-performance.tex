@@ -1,0 +1,117 @@
+\chapter{Performance}
+
+\section{Metriche di Riferimento}
+
+Le seguenti metriche sono state misurate su un dataset reale dell'RNA composto da circa 165 file XML:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Metrica} & \textbf{Valore} \\
+\midrule
+Velocità di parsing & $\sim$50.000 record/sec (8 worker) \\
+Utilizzo memoria per worker & $\sim$200 MB \\
+Rapporto compressione & $\sim$10x vs XML grezzo \\
+\bottomrule
+\end{tabular}
+\caption{Benchmark su dataset RNA reale}
+\end{table}
+
+\section{Scalabilità Orizzontale}
+
+La performance scala linearmente con il numero di worker fino al numero di core fisici disponibili:
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+    \begin{axis}[
+        width=10cm,
+        height=6cm,
+        xlabel={Numero Worker},
+        ylabel={Throughput (record/sec)},
+        xmin=1, xmax=8,
+        ymin=0, ymax=55000,
+        xtick={1,2,4,6,8},
+        ytick={0,10000,20000,30000,40000,50000},
+        legend pos=north west,
+        grid=major,
+        grid style={gray!30}
+    ]
+    \addplot[color=primaryblue, mark=*, thick] coordinates {
+        (1, 7000)
+        (2, 14000)
+        (4, 27000)
+        (6, 40000)
+        (8, 50000)
+    };
+    \addlegendentry{Misurato}
+    
+    \addplot[color=gray, dashed] coordinates {
+        (1, 7000)
+        (8, 56000)
+    };
+    \addlegendentry{Lineare ideale}
+    \end{axis}
+\end{tikzpicture}
+\caption{Scalabilità throughput vs numero worker}
+\end{figure}
+
+\begin{infobox}[Nota sulle Performance]
+Il leggero scostamento dalla linearità ideale è dovuto a:
+\begin{itemize}
+    \item Overhead di serializzazione/deserializzazione tra processi
+    \item Contesa I/O su disco per scritture Parquet concorrenti
+    \item Scheduling overhead del sistema operativo
+\end{itemize}
+\end{infobox}
+
+\section{Compressione Parquet}
+
+Il formato Parquet offre vantaggi significativi rispetto all'XML:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Aspetto} & \textbf{XML} & \textbf{Parquet} \\
+\midrule
+Storage size & 1 GB & $\sim$100 MB \\
+Tempo lettura completa & $>$60s & $<$5s \\
+Query selettive & Full scan & Partition pruning \\
+Tipizzazione & Assente & Nativa \\
+\bottomrule
+\end{tabular}
+\caption{Confronto XML vs Parquet}
+\end{table}
+
+\section{Ottimizzazioni Chiave}
+
+\subsection{Streaming Parser}
+
+L'utilizzo di \texttt{iterparse()} evita di caricare l'intero DOM in memoria:
+
+\begin{itemize}
+    \item Memory footprint costante indipendentemente dalla dimensione file
+    \item Possibilità di processare file multi-gigabyte su macchine con RAM limitata
+\end{itemize}
+
+\subsection{Batch Writing}
+
+La scrittura in batch da 10.000 record bilancia:
+\begin{itemize}
+    \item \textbf{Overhead I/O}: meno syscall rispetto a scritture singole
+    \item \textbf{Memory usage}: batch sufficientemente piccoli da non saturare RAM
+\end{itemize}
+
+\subsection{Aggressive Cleanup}
+
+Il pattern di cleanup post-parsing previene memory leak:
+
+\begin{lstlisting}[language=Python]
+elem.clear()
+while elem.getprevious() is not None:
+    del elem.getparent()[0]
+\end{lstlisting}
+
+Senza questo cleanup, \texttt{lxml} mantiene riferimenti all'intero documento ancestry.

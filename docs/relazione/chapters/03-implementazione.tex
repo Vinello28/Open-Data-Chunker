@@ -1,0 +1,136 @@
+\chapter{Implementazione}
+
+\section{Stack Tecnologico}
+
+La soluzione utilizza un moderno stack Python per data engineering:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llp{6cm}@{}}
+\toprule
+\textbf{Libreria} & \textbf{Versione} & \textbf{Utilizzo} \\
+\midrule
+\texttt{lxml} & 5.x & Parsing XML streaming \\
+\texttt{polars} & 1.x & DataFrame processing \\
+\texttt{pyarrow} & 18.x & Schema definition e Parquet I/O \\
+\texttt{duckdb} & 1.x & Query engine SQL \\
+\texttt{click} & 8.x & CLI framework \\
+\texttt{tqdm} & 4.x & Progress bar \\
+\bottomrule
+\end{tabular}
+\caption{Dipendenze principali}
+\end{table}
+
+\section{Sanitizzazione XML}
+
+Un problema critico dei dataset RNA è la presenza di \textbf{caratteri XML non validi}. Questi includono:
+
+\begin{itemize}
+    \item Caratteri di controllo ASCII: \texttt{0x00-0x08}, \texttt{0x0B-0x0C}, \texttt{0x0E-0x1F}
+    \item Entità numeriche malformate: \texttt{\&\#0;} - \texttt{\&\#31;}
+\end{itemize}
+
+La classe \texttt{CleanFileInputStream} risolve questo problema tramite un wrapper file-like che filtra lo stream in tempo reale:
+
+\begin{lstlisting}[language=Python, caption=Sanitizzazione streaming]
+class CleanFileInputStream:
+    def __init__(self, filename):
+        self.f = open(filename, 'rb')
+        self.invalid_xml_chars = re.compile(
+            b'[\x00-\x08\x0b\x0c\x0e-\x1f]|'
+            b'&#(?:[0-8]|1[1-2]|1[4-9]|2[0-9]|3[0-1]);'
+        )
+
+    def read(self, size=-1):
+        data = self.f.read(size)
+        return self.invalid_xml_chars.sub(b'', data)
+\end{lstlisting}
+
+\begin{tipbox}[Design Choice]
+Il pattern wrapper consente di integrare la sanitizzazione senza modificare il codice di parsing. Il parser \texttt{lxml} riceve uno stream già pulito.
+\end{tipbox}
+
+\section{Parsing Streaming}
+
+Per gestire file multi-gigabyte senza esaurire la memoria, utilizziamo \texttt{lxml.etree.iterparse()} con cleanup aggressivo:
+
+\begin{lstlisting}[language=Python, caption=Iterparse con memory management]
+context = etree.iterparse(
+    clean_stream, 
+    events=("end",), 
+    tag=f"{NS}AIUTO"
+)
+
+for event, elem in context:
+    # Estrazione dati...
+    
+    # Release memory
+    elem.clear()
+    while elem.getprevious() is not None:
+        del elem.getparent()[0]
+\end{lstlisting}
+
+Il pattern \texttt{elem.clear()} + deletion dei siblings previene memory leak tipici di \texttt{iterparse}.
+
+\section{Parallelismo Multi-Processo}
+
+L'elaborazione parallela sfrutta \texttt{ProcessPoolExecutor} per bypassare il GIL:
+
+\begin{lstlisting}[language=Python, caption=Orchestrazione parallela]
+with ProcessPoolExecutor(max_workers=workers) as executor:
+    futures = {
+        executor.submit(process_file, f, output): f 
+        for f in files
+    }
+    
+    for future in as_completed(futures):
+        stats = future.result()
+        # Aggregate statistics...
+\end{lstlisting}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=0.8cm, scale=0.85, transform shape]
+    % Stile file parquet
+    \tikzstyle{parquetfile} = [rectangle, rounded corners=2pt, minimum width=2.2cm, minimum height=0.8cm, text centered, draw=black, fill=accentgreen!25, font=\scriptsize]
+    
+    \node[component, minimum width=3cm] (main) {Main Process};
+    
+    \node[component, fill=accentgreen!20, below left=1.5cm and 1cm of main] (w1) {Worker 1};
+    \node[component, fill=accentgreen!20, below=1.5cm of main] (w2) {Worker 2};
+    \node[component, fill=accentgreen!20, below right=1.5cm and 1cm of main] (w3) {Worker N};
+    
+    \node[above right=0.3cm and -0.5cm of w2] {...};
+    
+    \draw[arrow] (main) -- (w1);
+    \draw[arrow] (main) -- (w2);
+    \draw[arrow] (main) -- (w3);
+    
+    \node[parquetfile, below=1cm of w1] (p1) {file1.parquet};
+    \node[parquetfile, below=1cm of w2] (p2) {file2.parquet};
+    \node[parquetfile, below=1cm of w3] (p3) {fileN.parquet};
+    
+    \draw[arrow] (w1) -- (p1);
+    \draw[arrow] (w2) -- (p2);
+    \draw[arrow] (w3) -- (p3);
+\end{tikzpicture}
+\caption{Modello fork-join per elaborazione parallela}
+\end{figure}
+
+\section{Batching e Scrittura}
+
+Per ottimizzare le scritture su disco, i record vengono accumulati in batch di 10.000 elementi prima del flush:
+
+\begin{lstlisting}[language=Python, caption=Flush batch su Parquet]
+BATCH_SIZE = 10000
+
+if len(batch_aiuti) >= BATCH_SIZE:
+    pq.write_to_dataset(
+        table,
+        root_path=str(base_path / "aiuti"),
+        partition_cols=['ANNO'],
+        existing_data_behavior='overwrite_or_ignore'
+    )
+\end{lstlisting}
+
+Il parametro \texttt{partition\_cols=['ANNO']} abilita il \textbf{Hive-style partitioning}, creando automaticamente directory \texttt{ANNO=2022/}, \texttt{ANNO=2023/}, etc.

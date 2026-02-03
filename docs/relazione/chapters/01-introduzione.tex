@@ -1,0 +1,45 @@
+\chapter{Introduzione}
+
+\section{Contesto}
+
+Il \textbf{Registro Nazionale degli Aiuti} (RNA) è la banca dati nazionale istituita presso il Ministero dello Sviluppo Economico che raccoglie le informazioni relative agli aiuti di Stato e agli aiuti \textit{de minimis} concessi in Italia. L'RNA pubblica periodicamente dataset in formato \textbf{Open Data XML}, consentendo l'accesso pubblico a informazioni dettagliate su milioni di contributi erogati.
+
+Questi dataset presentano caratteristiche che li rendono complessi da gestire:
+
+\begin{itemize}
+    \item \textbf{Volumi elevati}: centinaia di file XML, ciascuno contenente decine di migliaia di record
+    \item \textbf{Struttura gerarchica}: dati annidati su più livelli (Aiuti $\rightarrow$ Componenti $\rightarrow$ Strumenti)
+    \item \textbf{Qualità variabile}: presenza di caratteri XML non validi e encoding inconsistente
+    \item \textbf{Assenza di formati analitici}: i dati sono distribuiti solo in XML, non ottimale per query analitiche
+\end{itemize}
+
+\section{Obiettivi del Progetto}
+
+\textbf{Open Data Chunker} è una pipeline ETL (\textit{Extract, Transform, Load}) progettata per rispondere a queste sfide. Gli obiettivi principali sono:
+
+\begin{enumerate}
+    \item \textbf{Parsing robusto}: capacità di processare file XML corrotti o malformati senza interruzioni
+    \item \textbf{Performance scalabili}: elaborazione parallela multi-processo per sfruttare CPU multi-core
+    \item \textbf{Output analitico}: conversione in formato \textbf{Apache Parquet} con partizionamento temporale
+    \item \textbf{Query interattive}: integrazione con motori SQL (\textbf{DuckDB}) per interrogazioni ad-hoc
+    \item \textbf{Riproducibilità}: containerizzazione Docker per ambienti consistenti
+\end{enumerate}
+
+\begin{infobox}[Punti di Forza]
+\begin{itemize}
+    \item Pipeline end-to-end: dal raw XML al dataset queryable
+    \item Fault-tolerant: gestione automatica degli errori
+    \item Compressione 10x rispetto all'XML originale
+    \item Deploy immediato via Docker
+\end{itemize}
+\end{infobox}
+
+\section{Target Audience}
+
+Questa documentazione è rivolta a \textbf{Software Engineer} e \textbf{Data Engineer} interessati a:
+
+\begin{itemize}
+    \item Comprendere l'architettura di una pipeline ETL Python moderna
+    \item Valutare pattern di parallelismo e gestione memoria
+    \item Replicare o estendere la soluzione per casi d'uso simili
+\end{itemize}

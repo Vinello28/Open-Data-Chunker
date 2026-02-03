@@ -1,0 +1,121 @@
+\chapter{CLI e Usabilità}
+
+\section{Framework Click}
+
+L'interfaccia a riga di comando è costruita con \textbf{Click}, un framework Python che offre:
+
+\begin{itemize}
+    \item Parsing automatico degli argomenti
+    \item Validazione dei tipi
+    \item Help auto-generato
+    \item Composizione di comandi (gruppi)
+\end{itemize}
+
+\section{Comandi Disponibili}
+
+\subsection{parse}
+
+Elabora file XML e li converte in Parquet:
+
+\begin{lstlisting}[language=bash]
+docker compose run --rm etl python -m src.cli parse \
+    --input data/ \
+    --output public/parquet \
+    --workers 8
+\end{lstlisting}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llp{5cm}@{}}
+\toprule
+\textbf{Opzione} & \textbf{Default} & \textbf{Descrizione} \\
+\midrule
+\texttt{-i, --input} & (required) & File o directory input \\
+\texttt{-o, --output} & \texttt{public/parquet} & Directory output \\
+\texttt{-w, --workers} & 4 & Numero processi paralleli \\
+\bottomrule
+\end{tabular}
+\caption{Opzioni comando parse}
+\end{table}
+
+\subsection{query}
+
+Esegue query SQL interattive via DuckDB:
+
+\begin{lstlisting}[language=bash]
+# Query semplice
+docker compose run --rm etl python -m src.cli query \
+    --table aiuti --limit 5
+
+# Query SQL custom
+docker compose run --rm etl python -m src.cli query \
+    --table strumenti \
+    --query "SELECT ANNO, SUM(IMPORTO_NOMINALE) as tot 
+             FROM read_parquet('public/parquet/strumenti/**/*.parquet') 
+             GROUP BY ANNO ORDER BY ANNO"
+\end{lstlisting}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llp{5cm}@{}}
+\toprule
+\textbf{Opzione} & \textbf{Default} & \textbf{Descrizione} \\
+\midrule
+\texttt{-t, --table} & (required) & Tabella target \\
+\texttt{-q, --query} & — & Query SQL custom \\
+\texttt{-l, --limit} & 10 & Limite risultati \\
+\bottomrule
+\end{tabular}
+\caption{Opzioni comando query}
+\end{table}
+
+\subsection{export}
+
+Esporta tabelle in formato CSV o TXT:
+
+\begin{lstlisting}[language=bash]
+docker compose run --rm etl python -m src.cli export \
+    --table aiuti \
+    --format csv \
+    --output public/exports/aiuti.csv \
+    --delimiter ","
+\end{lstlisting}
+
+\subsection{export-aggregated}
+
+Export specializzato con join e aggregazioni pre-calcolate:
+
+\begin{lstlisting}[language=bash]
+docker compose run --rm etl python -m src.cli export-aggregated \
+    --output public/exports/aggregated.csv
+\end{lstlisting}
+
+Questo comando:
+\begin{enumerate}
+    \item Effettua join tra AIUTI, COMPONENTI e STRUMENTI
+    \item Aggrega \texttt{IMPORTO\_NOMINALE} e \texttt{ELEMENTO\_DI\_AIUTO}
+    \item Conta componenti e strumenti per aiuto
+    \item Produce un file CSV per anno per ottimizzare la memoria
+\end{enumerate}
+
+\section{Progress Bar}
+
+Durante l'elaborazione, \texttt{tqdm} fornisce feedback visivo in tempo reale:
+
+\begin{lstlisting}[language=bash, caption=Output con progress bar]
+Found 165 XML files to process
+Starting processing with 8 workers...
+Processing files: 100%|===================| 165/165 [02:15<00:00]
+Processing completed in 135.42 seconds
+Total processed records: {'aiuti': 2847293, 'componenti': ...}
+\end{lstlisting}
+
+\section{Error Handling}
+
+Il sistema gestisce gli errori in modo graceful:
+
+\begin{itemize}
+    \item \textbf{File corrotti}: loggati ma non bloccano l'esecuzione
+    \item \textbf{failures.txt}: lista dei file falliti salvata per retry
+    \item \textbf{Statistiche accurate}: solo file processati correttamente conteggiati
+\end{itemize}

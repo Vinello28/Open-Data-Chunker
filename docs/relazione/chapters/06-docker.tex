@@ -1,0 +1,124 @@
+\chapter{Containerizzazione Docker}
+
+\section{Vantaggi della Containerizzazione}
+
+L'utilizzo di Docker garantisce:
+
+\begin{itemize}
+    \item \textbf{Riproducibilità}: ambiente identico su qualsiasi macchina
+    \item \textbf{Isolamento}: nessun conflitto con librerie di sistema
+    \item \textbf{Portabilità}: deploy immediato su cloud, CI/CD, workstation locali
+    \item \textbf{Versionamento}: immagini taggate per rollback facili
+\end{itemize}
+
+\begin{tipbox}[Best Practice]
+La containerizzazione elimina il classico problema ``works on my machine''. Ogni esecuzione avviene in un ambiente controllato e ripetibile.
+\end{tipbox}
+
+\section{Dockerfile}
+
+Il Dockerfile utilizza un'immagine base \texttt{python:3.12-slim} per minimizzare la dimensione:
+
+\begin{lstlisting}[language=docker, caption=Dockerfile]
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
+COPY . .
+
+# Set python path
+ENV PYTHONPATH=/app
+
+# Default command
+CMD ["python", "-m", "src.cli"]
+\end{lstlisting}
+
+\subsection{Ottimizzazioni Docker}
+
+\begin{description}
+    \item[Multi-stage non necessario] Le dipendenze Python non richiedono compilazione pesante
+    \item[Cache layer] \texttt{requirements.txt} copiato prima del codice per cache efficiente
+    \item[Cleanup apt] Rimozione cache \texttt{/var/lib/apt/lists/*} per immagine più leggera
+    \item[--no-cache-dir] Evita cache pip inutile nel container
+\end{description}
+
+\section{Docker Compose}
+
+Il file \texttt{docker-compose.yml} semplifica l'esecuzione:
+
+\begin{lstlisting}[language=docker, caption=docker-compose.yml]
+services:
+  etl:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./public:/app/public
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: ["tail", "-f", "/dev/null"]
+\end{lstlisting}
+
+\subsection{Volume Mounting}
+
+Due volumi persistenti garantiscono che:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lp{8cm}@{}}
+\toprule
+\textbf{Volume} & \textbf{Scopo} \\
+\midrule
+\texttt{./data:/app/data} & Input XML accessibili dal container \\
+\texttt{./public:/app/public} & Output Parquet persistito su host \\
+\bottomrule
+\end{tabular}
+\caption{Volumi Docker}
+\end{table}
+
+\section{Workflow Tipico}
+
+\begin{lstlisting}[language=bash, caption=Comandi Docker tipici]
+# Build dell'immagine
+docker compose build
+
+# Parsing di tutti i file XML
+docker compose run --rm etl python -m src.cli parse \
+    --input data/ --workers 8
+
+# Query interattiva
+docker compose run --rm etl python -m src.cli query \
+    --table aiuti --limit 10
+
+# Export CSV
+docker compose run --rm etl python -m src.cli export \
+    --table aiuti --output public/exports/aiuti.csv
+\end{lstlisting}
+
+\section{CI/CD Integration}
+
+La natura containerizzata facilita l'integrazione in pipeline CI/CD:
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=1.2cm, scale=0.85, transform shape]
+    \node[component, fill=gray!20] (git) {Git Push};
+    \node[component, right=of git] (build) {Docker Build};
+    \node[component, right=of build] (test) {Run Tests};
+    \node[component, right=of test] (deploy) {Deploy};
+    
+    \draw[arrow] (git) -- (build);
+    \draw[arrow] (build) -- (test);
+    \draw[arrow] (test) -- (deploy);
+\end{tikzpicture}
+\caption{Pipeline CI/CD tipica}
+\end{figure}

@@ -1,0 +1,88 @@
+\chapter{Conclusioni}
+
+\section{Riepilogo Punti di Forza}
+
+Open Data Chunker si distingue per i seguenti punti di forza:
+
+\begin{enumerate}
+    \item \textbf{Robustezza}
+    \begin{itemize}
+        \item Sanitizzazione automatica XML malformati
+        \item Fault tolerance con logging granulare
+        \item Recovery automatico da errori di parsing
+    \end{itemize}
+    
+    \item \textbf{Performance}
+    \begin{itemize}
+        \item Parsing streaming memory-efficient
+        \item Parallelismo multi-processo scalabile
+        \item Output Parquet con compressione 10x
+    \end{itemize}
+    
+    \item \textbf{Riproducibilità}
+    \begin{itemize}
+        \item Containerizzazione Docker completa
+        \item Ambiente consistente su qualsiasi piattaforma
+        \item Integrazione CI/CD ready
+    \end{itemize}
+    
+    \item \textbf{Usabilità}
+    \begin{itemize}
+        \item CLI intuitiva con Click
+        \item Query SQL interattive con DuckDB
+        \item Export flessibile in formati standard
+    \end{itemize}
+\end{enumerate}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[scale=0.9]
+    \foreach \angle/\label/\col in {
+        90/Robustezza/primaryblue,
+        0/Performance/accentgreen,
+        270/Riproducibilità/warnorange,
+        180/Usabilità/primaryblue!60
+    } {
+        \draw[\col, ultra thick] (0,0) -- (\angle:2.5);
+        \node at (\angle:3.2) {\textbf{\label}};
+        \filldraw[\col!50] (\angle:2) circle (0.15);
+    }
+    \draw[gray, dashed] (0,0) circle (1.5);
+    \draw[gray, dashed] (0,0) circle (2.5);
+\end{tikzpicture}
+\caption{I quattro pilastri di Open Data Chunker}
+\end{figure}
+
+\section{Possibili Evoluzioni}
+
+La soluzione può essere estesa in diverse direzioni:
+
+\begin{description}
+    \item[Incremental Processing] Supporto per elaborazione differenziale di soli nuovi file, evitando re-processing completo.
+    
+    \item[Schema Evolution] Gestione automatica di cambiamenti nello schema XML sorgente con migrazione trasparente.
+    
+    \item[Data Quality] Integrazione di framework di data quality (es. Great Expectations) per validazione automatica.
+    
+    \item[Orchestrazione] Integrazione con Apache Airflow o Prefect per scheduling e monitoring.
+    
+    \item[API REST] Esposizione dei dati via API per integrazioni applicative.
+\end{description}
+
+\section{Considerazioni Finali}
+
+Open Data Chunker dimostra come un'architettura ben progettata possa trasformare dataset pubblici complessi in risorse analitiche accessibili. La combinazione di:
+
+\begin{itemize}
+    \item Modern Python data stack (Polars, DuckDB, PyArrow)
+    \item Pattern di parallelismo robusti
+    \item Containerizzazione per portabilità
+\end{itemize}
+
+...rende la soluzione adatta sia per analisi esplorative occasionali che per pipeline di produzione.
+
+\vspace{1cm}
+
+\begin{center}
+\textit{``La qualità dei dati aperti è tanto importante quanto la loro disponibilità.''}
+\end{center}

@@ -1,0 +1,109 @@
+\chapter{Architettura}
+
+\section{Panoramica}
+
+L'architettura di Open Data Chunker segue un pattern \textbf{layered} con separazione netta delle responsabilità. Il sistema è composto da quattro layer principali, illustrati nel diagramma seguente.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=1.5cm, scale=0.9, transform shape]
+    
+    % Stile database migliorato
+    \tikzstyle{dbbox} = [rectangle, rounded corners=3pt, minimum width=3.5cm, minimum height=1.2cm, text centered, draw=black, fill=accentgreen!25, font=\small]
+    
+    % Input Layer
+    \node[component, fill=warnorange!30, minimum width=4cm] (xml) {Input Layer\\{\small XML Files}};
+    
+    % Processing Layer
+    \node[component, fill=primaryblue!20, minimum width=4cm, right=2cm of xml] (process) {Processing Layer\\{\small lxml + Sanitizer}};
+    
+    % Storage Layer - Box stile database
+    \node[dbbox, right=2cm of process] (storage) {Storage Layer\\{\small Apache Parquet}};
+    \draw[black, thick] ([yshift=-3pt]storage.north west) -- ([yshift=-3pt]storage.north east);
+    \draw[black, thick] ([yshift=-8pt]storage.north west) -- ([yshift=-8pt]storage.north east);
+    
+    % Query Layer
+    \node[component, fill=primaryblue!40, minimum width=4cm, below=2cm of storage] (query) {Query Layer\\{\small DuckDB + Polars}};
+    
+    % CLI
+    \node[component, fill=gray!20, minimum width=3cm, below=2cm of process] (cli) {CLI\\{\small Click}};
+    
+    % Arrows
+    \draw[arrow] (xml) -- node[above, font=\small] {stream} (process);
+    \draw[arrow] (process) -- node[above, font=\small] {batch write} (storage);
+    \draw[arrow] (storage) -- (query);
+    \draw[arrow] (cli) -- (process);
+    \draw[arrow] (cli) -- (query);
+    
+\end{tikzpicture}
+\caption{Architettura a layer di Open Data Chunker}
+\label{fig:architecture}
+\end{figure}
+
+\section{Layer di Input}
+
+Il layer di input gestisce i file XML grezzi provenienti dall'RNA Open Data. Caratteristiche:
+
+\begin{itemize}
+    \item Supporto per file singoli o directory ricorsive
+    \item Discovery automatico tramite glob pattern \texttt{*.xml}
+    \item Nessun caricamento in memoria dell'intero file (streaming)
+\end{itemize}
+
+\section{Layer di Processing}
+
+Il core della pipeline, implementato in \texttt{src/parser.py}. Composto da:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lp{8cm}@{}}
+\toprule
+\textbf{Componente} & \textbf{Responsabilità} \\
+\midrule
+\texttt{CleanFileInputStream} & Wrapper che filtra caratteri XML non validi in tempo reale \\
+\texttt{iterparse()} & Parser SAX-like per elaborazione streaming \\
+\texttt{ProcessPoolExecutor} & Orchestratore del parallelismo multi-processo \\
+\texttt{flush\_batches()} & Writer batch su Parquet con partizionamento \\
+\bottomrule
+\end{tabular}
+\caption{Componenti del Processing Layer}
+\end{table}
+
+\section{Layer di Storage}
+
+Output in formato \textbf{Apache Parquet} con le seguenti caratteristiche:
+
+\begin{itemize}
+    \item \textbf{Columnar storage}: compressione ottimale e predicate pushdown
+    \item \textbf{Hive partitioning}: directory \texttt{ANNO=YYYY} per partition pruning
+    \item \textbf{Schema tipizzato}: definizioni PyArrow in \texttt{src/models.py}
+\end{itemize}
+
+\begin{tipbox}[Vantaggio: Partition Pruning]
+Le query filtrate per anno leggono solo le partizioni rilevanti, riducendo I/O fino al 90\% su dataset multi-anno.
+\end{tipbox}
+
+\section{Layer di Query}
+
+Dual-engine per flessibilità:
+
+\begin{description}
+    \item[DuckDB] Motore SQL analitico in-process. Ideale per aggregazioni e join complessi via CLI.
+    \item[Polars] DataFrame library lazy-first. Utilizzato per export streaming memory-efficient.
+\end{description}
+
+\section{Flusso dei Dati}
+
+\begin{enumerate}
+    \item L'utente invoca \texttt{parse --input data/} via CLI
+    \item Il CLI discovery tutti i file \texttt{*.xml} nella directory
+    \item I file vengono distribuiti tra N worker processes
+    \item Ogni worker:
+    \begin{enumerate}
+        \item Apre il file tramite \texttt{CleanFileInputStream}
+        \item Itera gli elementi \texttt{<AIUTO>} con \texttt{iterparse()}
+        \item Estrae i campi in batch da 10.000 record
+        \item Scrive il batch su Parquet partizionato
+    \end{enumerate}
+    \item Al termine, statistiche aggregate vengono loggite
+\end{enumerate}
