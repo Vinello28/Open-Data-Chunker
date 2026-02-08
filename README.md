@@ -196,6 +196,33 @@ docker compose run --rm etl python -m src.cli export-aggregated --output public/
 ```
 This will generate `public/exports/aggregated_2024.csv`, `public/exports/aggregated_2023.csv`, etc.
 
+### `classify` — AI/Non-AI Classification
+
+Classifies project descriptions using the `inference-service`.
+
+**Prerequisites:**
+1. Ensure the `etl` image is built: `docker compose build etl`
+2. Start the inference service (defaults to PyTorch backend): `docker compose up inference-service`
+
+```bash
+docker compose run --rm etl python -m src.cli classify [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-o, --output` | Output directory for classified CSVs | required |
+| `-y, --year` | Specific year to process (optional) | — |
+| `-b, --batch-size` | Batch size for inference | `32` |
+
+**Examples:**
+```bash
+# Classify all years
+docker compose run --rm etl python -m src.cli classify --output public/classified
+
+# Classify specific year
+docker compose run --rm etl python -m src.cli classify --output public/classified --year 2024
+```
+
 ## 📁 Project Structure
 
 ```

@@ -9,3 +9,21 @@ services:
     # Mantieni il container attivo per debugging o esecuzione comandi
     command: [ "tail", "-f", "/dev/null" ]
     # Per eseguire comandi specifici: docker compose run --rm etl ...
+
+  inference-service:
+    build:
+      context: ./inference-service
+      dockerfile: docker/Dockerfile.serve
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./inference-service:/app
+    environment:
+      - INFERENCE_BACKEND=pytorch
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]

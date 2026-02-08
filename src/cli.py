@@ -108,5 +108,16 @@ def export_aggregated(output, delimiter):
     """Export aggregated dataset (AIUTI + COMP + STRUM) to CSV"""
     export_aggregated_dataset(output, delimiter)
 
+
+from .classifier import classify_and_export
+
+@cli.command()
+@click.option('--output', '-o', required=True, help='Output directory for classified CSVs')
+@click.option('--batch-size', '-b', default=32, help='Batch size for inference')
+@click.option('--year', '-y', type=int, required=False, help='Specific year to process (optional)')
+def classify(output, batch_size, year):
+    """Classify projects as AI/NON-AI and export to CSV"""
+    classify_and_export(output, batch_size=batch_size, year=year)
+
 if __name__ == '__main__':
     cli()
