@@ -2,12 +2,13 @@
 
 ![image](docs/images/rdm1.png)
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)](https://www.docker.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Polars](https://img.shields.io/badge/Polars-Running_Fast-blue?style=flat&logo=polars&logoColor=white)](https://pola.rs/)
-[![DuckDB](https://img.shields.io/badge/DuckDB-Analytical_SQL-fff000?style=flat&logo=duckdb&logoColor=black)](https://duckdb.org/)
-[![Parquet](https://img.shields.io/badge/Format-Apache%20Parquet-C41E3A?style=flat&logo=apache&logoColor=white)](https://parquet.apache.org/)
+[![Python 3.12+](https://img.shields.io/badge/Python_3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Polars](https://img.shields.io/badge/Polars-0075FF?style=for-the-badge&logo=polars&logoColor=white)](https://pola.rs/)
+[![DuckDB](https://img.shields.io/badge/DuckDB-Analytical_SQL-202020?style=for-the-badge&logo=duckdb&logoColor=white)](https://duckdb.org/)
+[![Parquet](https://img.shields.io/badge/Format-Apache_Parquet-C41E3A?style=for-the-badge&logo=apache&logoColor=white)](https://parquet.apache.org/)
+[![Fedora](https://img.shields.io/badge/Fedora-51A2DA?style=for-the-badge&logo=fedora&logoColor=white)](https://getfedora.org/)
+[![License: MIT](https://img.shields.io/badge/License-44CC11?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](https://opensource.org/licenses/MIT)
 
 A high-performance ETL pipeline for processing large-scale XML datasets from the Italian RNA (Registro Nazionale degli Aiuti) Open Data. Transforms XML files into optimized, year-partitioned Parquet format with built-in query and export capabilities.
 
