@@ -18,3 +18,7 @@ data/2025/*
 # Public
 public/*
 !public/.gitkeep
+
+#FS
+.DS_Store
+
