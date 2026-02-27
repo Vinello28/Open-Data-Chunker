@@ -28,8 +28,8 @@ def run_query(table: str, sql_query: str = None, limit: int = 10):
              final_query = f"SELECT * FROM read_parquet('{dataset_path}') WHERE {final_query}"
              
         print(f"Executing: {final_query}")
-        result = con.execute(final_query).df()
-        print(result)
+        result_arrow = con.execute(final_query).arrow()
+        print(pl.from_arrow(result_arrow))
         
     except Exception as e:
         logger.error(f"Query error: {e}")
@@ -246,3 +246,72 @@ def export_aggregated_dataset(output_path: str, delimiter: str = ","):
         logger.error(f"Aggregated export error: {e}")
         # Rilancia l'eccezione per farla vedere alla CLI
         raise e
+
+def clean_parquet_texts():
+    """Rimuove le virgole e le nuove linee dai campi testo di tutti i dataset esportati in parquet."""
+    logger.info("Starting text cleaning in Parquet files...")
+    try:
+        from tqdm import tqdm
+        parquet_files = list(Path(DATA_DIR).rglob("*.parquet"))
+        if not parquet_files:
+            logger.warning("No Parquet files found for cleaning.")
+            return
+
+        pbar = tqdm(parquet_files, desc="Cleaning Parquet files")
+        for file_path in pbar:
+            try:
+                df = pl.read_parquet(file_path)
+                
+                string_cols = [col_name for col_name, dtype in zip(df.columns, df.dtypes) if dtype in (pl.Utf8, pl.String, pl.Categorical)]
+                
+                if string_cols:
+                    modifications = {}
+                    for col in string_cols:
+                        modifications[col] = pl.col(col).cast(pl.Utf8).str.replace_all(",", " ").str.replace_all(r"[\n\r]+", " ")
+                    
+                    df = df.with_columns(**modifications)
+                    df.write_parquet(file_path)
+            except Exception as e:
+                logger.error(f"Error cleaning file {file_path}: {e}")
+        
+        logger.info("Text cleaning completed successfully.")
+    except Exception as e:
+         logger.error(f"Critical error during file cleaning: {e}")
+         raise e
+
+def count_project_descriptions(output_path: str = None, limit: int = None):
+    """
+    Esegue una query SQL per raggruppare le descrizioni dei progetti
+    e contarne le occorrenze.
+    """
+    dataset_path = get_dataset_path('aiuti') + "/**/*.parquet"
+    con = duckdb.connect()
+    try:
+        query = f"""
+            SELECT DESCRIZIONE_PROGETTO, COUNT(*) as conteggio
+            FROM read_parquet('{dataset_path}')
+            WHERE DESCRIZIONE_PROGETTO IS NOT NULL AND DESCRIZIONE_PROGETTO != ''
+            GROUP BY DESCRIZIONE_PROGETTO
+            ORDER BY conteggio DESC
+        """
+        if limit:
+            query += f" LIMIT {limit}"
+            
+        logger.info(f"Executing count query...")
+        result_arrow = con.execute(query).arrow()
+        import polars as pl
+        result_df = pl.from_arrow(result_arrow)
+        
+        if output_path:
+            logger.info(f"Saving counts to {output_path}...")
+            # Automatically create parent directories to avoid OS error 2
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            result_df.write_csv(output_path)
+            logger.info("Save completed.")
+        else:
+            print(result_df)
+            
+    except Exception as e:
+        logger.error(f"Query error: {e}")
+    finally:
+        con.close()

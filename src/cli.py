@@ -7,7 +7,7 @@ import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 from .parser import process_file
-from .exporter import export_dataset, run_query, export_aggregated_dataset
+from .exporter import export_dataset, run_query, export_aggregated_dataset, clean_parquet_texts, count_project_descriptions
 
 # Configuration logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -118,6 +118,18 @@ from .classifier import classify_and_export
 def classify(output, batch_size, year):
     """Classify projects as AI/NON-AI and export to CSV"""
     classify_and_export(output, batch_size=batch_size, year=year)
+
+@cli.command()
+def clean_text():
+    """Ripulisce tutti i campi testuali dai caratteri delimitatori (virgole)"""
+    clean_parquet_texts()
+
+@cli.command()
+@click.option('--output', '-o', required=False, help='Output CSV file path specific count')
+@click.option('--limit', '-l', type=int, required=False, help='Limit results')
+def count_descriptions(output, limit):
+    """Conta le occorrenze delle descrizioni dei progetti e le raggruppa"""
+    count_project_descriptions(output, limit)
 
 if __name__ == '__main__':
     cli()
