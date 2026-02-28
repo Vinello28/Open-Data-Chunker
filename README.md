@@ -217,12 +217,116 @@ docker compose run --rm etl python -m src.cli classify [OPTIONS]
 
 **Examples:**
 ```bash
-# Classify all years
+# Docker: classify all years
 docker compose run --rm etl python -m src.cli classify --output public/classified
 
-# Classify specific year
-docker compose run --rm etl python -m src.cli classify --output public/classified --year 2024
+# Local: classify specific year
+python -m src.cli classify --output public/classified --year 2024
 ```
+
+---
+
+### `clean-text` — Clean Text Fields
+
+Removes commas and newlines from all text fields in Parquet files, preventing CSV export issues.
+
+```bash
+# Docker
+docker compose run --rm etl python -m src.cli clean-text
+
+# Local
+python -m src.cli clean-text
+```
+
+---
+
+### `count-descriptions` — Count Description Occurrences
+
+Groups and counts project descriptions to identify duplicates.
+
+```bash
+docker compose run --rm etl python -m src.cli count-descriptions [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-o, --output` | Output CSV file path | — (prints to stdout) |
+| `-l, --limit` | Limit results | — (all) |
+
+**Examples:**
+```bash
+# Docker: view top 20 most common descriptions
+docker compose run --rm etl python -m src.cli count-descriptions --limit 20
+
+# Local: save all counts to CSV
+python -m src.cli count-descriptions --output public/exports/description_counts.csv
+```
+
+---
+
+### `build-cache` — Build Classification Cache
+
+Extracts unique descriptions via DuckDB, classifies each one **a single time** through the inference-service, and saves the result as a Parquet cache file. This dramatically speeds up classification when descriptions repeat across many records.
+
+**Prerequisites:** The `inference-service` must be running.
+
+```bash
+docker compose run --rm etl python -m src.cli build-cache [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-o, --output` | Output Parquet cache file path | required |
+| `-b, --batch-size` | Batch size for inference | `32` |
+| `--inference-url` | Inference service URL | `http://inference-service:8080/classify` |
+
+**Examples:**
+```bash
+# Docker
+docker compose run --rm etl python -m src.cli build-cache \
+  --output public/cache/classification_cache.parquet \
+  --batch-size 64
+
+# Local (inference-service on localhost)
+python -m src.cli build-cache \
+  --output public/cache/classification_cache.parquet \
+  --inference-url http://localhost:8080/classify
+```
+
+---
+
+### `classify-cached` — Classify Using Pre-Built Cache
+
+Uses the pre-built classification cache to assign labels via a fast **left join** per year. Each year is processed in parallel using multithreading.
+
+```bash
+docker compose run --rm etl python -m src.cli classify-cached [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-o, --output` | Output directory for classified CSVs | required |
+| `-c, --cache` | Path to classification cache Parquet file | required |
+| `-y, --year` | Specific year to process (optional) | — (all) |
+| `-w, --workers` | Number of threads for parallel join+export | `4` |
+
+**Examples:**
+```bash
+# Docker: classify all years using cache
+docker compose run --rm etl python -m src.cli classify-cached \
+  --output public/classified \
+  --cache public/cache/classification_cache.parquet \
+  --workers 4
+
+# Local: classify single year
+python -m src.cli classify-cached \
+  --output public/classified \
+  --cache public/cache/classification_cache.parquet \
+  --year 2024
+```
+
+> **💡 Recommended pipeline:** Run `clean-text` → `build-cache` → `classify-cached` for optimal performance.
+> If there are 2M records but only 50K unique descriptions, this achieves a ~40x speedup over `classify`.
 
 ## 📁 Project Structure
 
@@ -230,13 +334,16 @@ docker compose run --rm etl python -m src.cli classify --output public/classifie
 Open-Data-Chunker/
 ├── src/
 │   ├── __init__.py
-│   ├── cli.py          # Click CLI entry point
-│   ├── parser.py       # XML parsing with CleanFileInputStream
-│   ├── exporter.py     # Query execution & export logic
-│   └── models.py       # PyArrow schema definitions
+│   ├── cli.py                    # Click CLI entry point
+│   ├── parser.py                 # XML parsing with CleanFileInputStream
+│   ├── exporter.py               # Query execution & export logic
+│   ├── classifier.py             # AI/Non-AI classification (per-row)
+│   ├── classification_cache.py   # Cached classification (unique descriptions)
+│   └── models.py                 # PyArrow schema definitions
 ├── data/               # Input XML files (gitignored)
 ├── public/
 │   ├── parquet/        # Output Parquet datasets
+│   ├── cache/          # Classification cache
 │   └── exports/        # Exported CSV/TXT files
 ├── tests/
 ├── docs/

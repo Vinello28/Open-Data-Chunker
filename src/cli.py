@@ -131,5 +131,25 @@ def count_descriptions(output, limit):
     """Conta le occorrenze delle descrizioni dei progetti e le raggruppa"""
     count_project_descriptions(output, limit)
 
+
+from .classification_cache import build_classification_cache, classify_with_cache
+
+@cli.command()
+@click.option('--output', '-o', required=True, help='Output Parquet cache file path')
+@click.option('--batch-size', '-b', default=32, help='Batch size for inference')
+@click.option('--inference-url', default='http://inference-service:8080/classify', help='Inference service URL')
+def build_cache(output, batch_size, inference_url):
+    """Costruisce la cache di classificazione classificando le descrizioni uniche una sola volta"""
+    build_classification_cache(output, batch_size=batch_size, inference_url=inference_url)
+
+@cli.command()
+@click.option('--output', '-o', required=True, help='Output directory for classified CSVs')
+@click.option('--cache', '-c', required=True, help='Path to classification cache Parquet file')
+@click.option('--year', '-y', type=int, required=False, help='Specific year to process (optional)')
+@click.option('--workers', '-w', default=4, help='Number of threads for parallel join+export per year')
+def classify_cached(output, cache, year, workers):
+    """Classifica i progetti usando la cache pre-costruita (join veloce, multithread)"""
+    classify_with_cache(output, cache_path=cache, year=year, max_workers=workers)
+
 if __name__ == '__main__':
     cli()
