@@ -4,6 +4,7 @@ import logging
 import requests
 from tqdm import tqdm
 import time
+from .exporter import get_aggregated_year_lazyframe
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,10 @@ def classify_and_export(output_path: str, batch_size: int = 32, inference_url: s
             # And minimal ID columns (CAR, COR) to keep track, plus others we want in output
             # For simplicity, we read everything and append the classification
             
-            lf = pl.scan_parquet(str(year_path / "*.parquet"))
+            lf = get_aggregated_year_lazyframe(year_val)
+            if lf is None:
+                logger.warning(f"No aggregated data for year {year_val}.")
+                continue
             
             # Collect to memory for batch processing using requests (Polars HTTP isn't native/easy for this batching)
             # Warning: for HUGE datasets this might OOM. But assuming reasonable year chunks.

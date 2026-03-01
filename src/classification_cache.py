@@ -13,6 +13,7 @@ import logging
 import requests
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from .exporter import get_aggregated_year_lazyframe
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,10 @@ def _process_year(year_val: int, year_path: Path, lf_cache: pl.LazyFrame, output
     Funzione worker estraibile per il multithreading.
     """
     try:
-        lf_aiuti = pl.scan_parquet(str(year_path / "*.parquet"))
+        lf_aiuti = get_aggregated_year_lazyframe(year_val)
+        if lf_aiuti is None:
+             logger.warning(f"No aggregated data for year {year_val}.")
+             return year_val, False
 
         # Left join con la cache sulla DESCRIZIONE_PROGETTO
         lf_classified = lf_aiuti.join(
