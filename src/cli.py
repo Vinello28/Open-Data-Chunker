@@ -121,7 +121,7 @@ def classify(output, batch_size, year):
 
 @cli.command()
 def clean_text():
-    """Ripulisce tutti i campi testuali dai caratteri delimitatori (virgole)"""
+    """Ripulisce tutti i campi testuali dai caratteri delimitatori (virgole, doppie virgolette, newline)"""
     clean_parquet_texts()
 
 @cli.command()

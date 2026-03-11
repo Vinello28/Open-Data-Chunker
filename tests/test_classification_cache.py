@@ -137,7 +137,8 @@ class TestClassifyWithCache:
         # 2. Classifica con la cache
         output_dir = tmp_path / "classified"
 
-        with patch("src.classification_cache.DATA_DIR", mock_aiuti_data):
+        with patch("src.exporter.DATA_DIR", mock_aiuti_data), \
+             patch("src.classification_cache.DATA_DIR", mock_aiuti_data):
             classify_with_cache(
                 output_path=str(output_dir),
                 cache_path=str(cache_path),
@@ -147,7 +148,7 @@ class TestClassifyWithCache:
         out_file = output_dir / "classified_aiuti_2023.csv"
         assert out_file.exists()
 
-        df_result = pl.read_csv(out_file)
+        df_result = pl.read_csv(out_file, infer_schema_length=10000)
 
         # Tutte e 5 le righe originali
         assert len(df_result) == 5
@@ -193,13 +194,14 @@ class TestClassifyWithCache:
 
         output_dir = tmp_path / "classified"
 
-        with patch("src.classification_cache.DATA_DIR", tmp_path / "data"):
+        with patch("src.exporter.DATA_DIR", tmp_path / "data"), \
+             patch("src.classification_cache.DATA_DIR", tmp_path / "data"):
             classify_with_cache(
                 output_path=str(output_dir),
                 cache_path=str(cache_path),
             )
 
-        df_result = pl.read_csv(output_dir / "classified_aiuti_2024.csv")
+        df_result = pl.read_csv(output_dir / "classified_aiuti_2024.csv", infer_schema_length=10000)
         assert df_result["CLASSIFICAZIONE"][0] == "UNKNOWN"
         assert df_result["CLASSIFICAZIONE_CONFIDENZA"][0] == 0.0
 

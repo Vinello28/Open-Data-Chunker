@@ -45,6 +45,20 @@ def export_dataset(table: str, format: str, output_path: str, delimiter: str = "
         # scan_parquet supporta hive partitioning automaticamente
         lf = pl.scan_parquet(str(Path(dataset_path) / "**/*.parquet"))
         
+        if table == 'aiuti':
+            comp_path = get_dataset_path('componenti')
+            if Path(comp_path).exists():
+                lf_comp = pl.scan_parquet(str(Path(comp_path) / "**/*.parquet"))
+                lf_comp_agg = lf_comp.group_by(["CAR_AIUTO", "COR_AIUTO"]).agg([
+                    pl.col("DES_OBIETTIVO").filter(pl.col("DES_OBIETTIVO").is_not_null()).unique().str.join("|").alias("OBIETTIVO")
+                ])
+                lf = lf.join(
+                    lf_comp_agg,
+                    left_on=["CAR", "COR"],
+                    right_on=["CAR_AIUTO", "COR_AIUTO"],
+                    how="left"
+                )
+
         # Qui potremmo aggiungere filtri o aggregazioni se passati via CLI
         
         # Collect (attenzione alla RAM per dataset enormi, meglio streaming)
@@ -53,7 +67,7 @@ def export_dataset(table: str, format: str, output_path: str, delimiter: str = "
         
         if format == 'csv' or format == 'txt':
             lf.sink_csv(output_path, separator=delimiter)
-            
+        
         logger.info("Export completed.")
         
     except Exception as e:
@@ -191,10 +205,16 @@ def get_aggregated_year_lazyframe(year: int) -> pl.LazyFrame:
 
         group_cols = [c for c in required_aiuti if c in lf_joined.collect_schema().names()]
         
-        aggs = [
-            pl.col("IMPORTO_NOMINALE").sum().fill_null(0).alias("IMPORTO_NOMINALE_TOTALE"),
-            pl.col("ELEMENTO_DI_AIUTO").sum().fill_null(0).alias("ELEMENTO_DI_AIUTO_TOTALE"),
-        ]
+        aggs = []
+        if "IMPORTO_NOMINALE" in lf_joined.collect_schema().names():
+            aggs.append(pl.col("IMPORTO_NOMINALE").sum().fill_null(0).alias("IMPORTO_NOMINALE_TOTALE"))
+        else:
+            aggs.append(pl.lit(0.0).alias("IMPORTO_NOMINALE_TOTALE"))
+            
+        if "ELEMENTO_DI_AIUTO" in lf_joined.collect_schema().names():
+            aggs.append(pl.col("ELEMENTO_DI_AIUTO").sum().fill_null(0).alias("ELEMENTO_DI_AIUTO_TOTALE"))
+        else:
+            aggs.append(pl.lit(0.0).alias("ELEMENTO_DI_AIUTO_TOTALE"))
         
         if "ID_COMPONENTE_AIUTO" in lf_joined.collect_schema().names():
              aggs.append(pl.col("ID_COMPONENTE_AIUTO").n_unique().alias("NUM_COMPONENTI"))
@@ -203,15 +223,20 @@ def get_aggregated_year_lazyframe(year: int) -> pl.LazyFrame:
              
         if "COD_STRUMENTO" in lf_joined.collect_schema().names():
              aggs.append(pl.col("COD_STRUMENTO").count().alias("NUM_STRUMENTI"))
-             aggs.append(pl.col("COD_STRUMENTO").filter(pl.col("COD_STRUMENTO").is_not_null()).unique().str.concat("|").alias("COD_STRUMENTI"))
+             aggs.append(pl.col("COD_STRUMENTO").filter(pl.col("COD_STRUMENTO").is_not_null()).unique().str.join("|").alias("COD_STRUMENTI"))
         else:
              aggs.append(pl.lit(0).alias("NUM_STRUMENTI"))
              aggs.append(pl.lit(None).alias("COD_STRUMENTI"))
 
         if "SETTORE_ATTIVITA" in lf_joined.collect_schema().names():
-            aggs.append(pl.col("SETTORE_ATTIVITA").filter(pl.col("SETTORE_ATTIVITA").is_not_null()).unique().str.concat("|").alias("SETTORI_ATTIVITA"))
+            aggs.append(pl.col("SETTORE_ATTIVITA").filter(pl.col("SETTORE_ATTIVITA").is_not_null()).unique().str.join("|").alias("SETTORI_ATTIVITA"))
         else:
             aggs.append(pl.lit(None).alias("SETTORI_ATTIVITA"))
+
+        if "DES_OBIETTIVO" in lf_joined.collect_schema().names():
+            aggs.append(pl.col("DES_OBIETTIVO").filter(pl.col("DES_OBIETTIVO").is_not_null()).unique().str.join("|").alias("OBIETTIVO"))
+        else:
+            aggs.append(pl.lit(None).alias("OBIETTIVO"))
 
         aggregated = lf_joined.group_by(group_cols).agg(aggs)
         return aggregated
@@ -222,7 +247,7 @@ def get_aggregated_year_lazyframe(year: int) -> pl.LazyFrame:
 
 
 def clean_parquet_texts():
-    """Rimuove le virgole e le nuove linee dai campi testo di tutti i dataset esportati in parquet."""
+    """Rimuove le virgole, le doppie virgolette e le nuove linee dai campi testo di tutti i dataset esportati in parquet."""
     logger.info("Starting text cleaning in Parquet files...")
     try:
         from tqdm import tqdm
@@ -241,7 +266,7 @@ def clean_parquet_texts():
                 if string_cols:
                     modifications = {}
                     for col in string_cols:
-                        modifications[col] = pl.col(col).cast(pl.Utf8).str.replace_all(",", " ").str.replace_all(r"[\n\r]+", " ")
+                        modifications[col] = pl.col(col).cast(pl.Utf8).str.replace_all(",", " ").str.replace_all('"', " ").str.replace_all(r"[\n\r]+", " ")
                     
                     df = df.with_columns(**modifications)
                     df.write_parquet(file_path)
@@ -258,16 +283,35 @@ def count_project_descriptions(output_path: str = None, limit: int = None):
     Esegue una query SQL per raggruppare le descrizioni dei progetti
     e contarne le occorrenze.
     """
-    dataset_path = get_dataset_path('aiuti') + "/**/*.parquet"
+    aiuti_path = get_dataset_path('aiuti') + "/**/*.parquet"
+    comp_path = get_dataset_path('componenti') + "/**/*.parquet"
     con = duckdb.connect()
+    
+    # We check if componenti exist to adjust query
+    has_comp = Path(get_dataset_path('componenti')).exists()
+    
     try:
-        query = f"""
-            SELECT DESCRIZIONE_PROGETTO, COUNT(*) as conteggio
-            FROM read_parquet('{dataset_path}')
-            WHERE DESCRIZIONE_PROGETTO IS NOT NULL AND DESCRIZIONE_PROGETTO != ''
-            GROUP BY DESCRIZIONE_PROGETTO
-            ORDER BY conteggio DESC
-        """
+        if has_comp:
+            query = f"""
+                SELECT 
+                    a.DESCRIZIONE_PROGETTO, 
+                    COUNT(DISTINCT a.CAR || coalesce(a.COR, '')) as conteggio,
+                    string_agg(DISTINCT c.DES_OBIETTIVO, '|') as OBIETTIVO
+                FROM read_parquet('{aiuti_path}') a
+                LEFT JOIN read_parquet('{comp_path}') c ON a.CAR = c.CAR_AIUTO AND a.COR = c.COR_AIUTO
+                WHERE a.DESCRIZIONE_PROGETTO IS NOT NULL AND a.DESCRIZIONE_PROGETTO != ''
+                GROUP BY a.DESCRIZIONE_PROGETTO
+                ORDER BY conteggio DESC
+            """
+        else:
+            query = f"""
+                SELECT DESCRIZIONE_PROGETTO, COUNT(*) as conteggio
+                FROM read_parquet('{aiuti_path}')
+                WHERE DESCRIZIONE_PROGETTO IS NOT NULL AND DESCRIZIONE_PROGETTO != ''
+                GROUP BY DESCRIZIONE_PROGETTO
+                ORDER BY conteggio DESC
+            """
+            
         if limit:
             query += f" LIMIT {limit}"
             

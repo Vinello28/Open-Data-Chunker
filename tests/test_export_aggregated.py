@@ -7,9 +7,9 @@ from unittest.mock import patch, MagicMock
 @pytest.fixture
 def mock_parquet_data(tmp_path):
     data_dir = tmp_path / "data"
-    (data_dir / "aiuti").mkdir(parents=True)
-    (data_dir / "componenti").mkdir(parents=True)
-    (data_dir / "strumenti").mkdir(parents=True)
+    (data_dir / "aiuti" / "ANNO=2022").mkdir(parents=True)
+    (data_dir / "componenti" / "ANNO=2022").mkdir(parents=True)
+    (data_dir / "strumenti" / "ANNO=2022").mkdir(parents=True)
     
     # Create dummy AIUTI
     df_aiuti = pl.DataFrame({
@@ -30,7 +30,7 @@ def mock_parquet_data(tmp_path):
         "DES_OBIETTIVO": ["DesObj1", "DesObj2"],
         "FILE_SOURCE": ["file1.xml", "file2.xml"]
     })
-    df_aiuti.write_parquet(data_dir / "aiuti/part.parquet")
+    df_aiuti.write_parquet(data_dir / "aiuti/ANNO=2022/part.parquet")
     
     # Create dummy COMPONENTI
     df_comp = pl.DataFrame({
@@ -39,7 +39,7 @@ def mock_parquet_data(tmp_path):
         "COR_AIUTO": ["COR1", "COR1", "COR2"],
         "SETTORE_ATTIVITA": ["A.1", "B.2", "C.3"]
     })
-    df_comp.write_parquet(data_dir / "componenti/part.parquet")
+    df_comp.write_parquet(data_dir / "componenti/ANNO=2022/part.parquet")
     
     # Create dummy STRUMENTI
     df_strum = pl.DataFrame({
@@ -48,21 +48,22 @@ def mock_parquet_data(tmp_path):
         "IMPORTO_NOMINALE": [100.0, 200.0, 50.0, 300.0],
         "ELEMENTO_DI_AIUTO": [10.0, 20.0, 5.0, 30.0]
     })
-    df_strum.write_parquet(data_dir / "strumenti/part.parquet")
+    df_strum.write_parquet(data_dir / "strumenti/ANNO=2022/part.parquet")
     
     return data_dir
 
 def test_export_aggregated(mock_parquet_data, tmp_path):
-    output_file = tmp_path / "aggregated.csv"
+    output_base = tmp_path / "aggregated.csv"
+    output_file = tmp_path / "aggregated_2022.csv"
     
     # Patch DATA_DIR to point to our mock data
     with patch("src.exporter.DATA_DIR", mock_parquet_data):
-        export_aggregated_dataset(str(output_file))
+        export_aggregated_dataset(str(output_base))
     
     assert output_file.exists()
     
     # Verify content
-    df_res = pl.read_csv(output_file)
+    df_res = pl.read_csv(output_file, infer_schema_length=10000)
     
     # Check schema
     expected_cols = [
