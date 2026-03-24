@@ -168,7 +168,7 @@ def _process_year(year_val: int, year_path: Path, lf_cache: pl.LazyFrame, output
 
         # Export CSV
         out_file = output_dir / f"classified_aiuti_{year_val}.csv"
-        lf_classified.collect(engine="streaming").write_csv(out_file)
+        lf_classified.collect(engine="streaming").write_csv(out_file, quote_style="necessary")
         logger.info(f"Exported {out_file}")
         return year_val, True
 

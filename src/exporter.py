@@ -66,7 +66,7 @@ def export_dataset(table: str, format: str, output_path: str, delimiter: str = "
         logger.info(f"Exporting {table} to {output_path}...")
         
         if format == 'csv' or format == 'txt':
-            lf.sink_csv(output_path, separator=delimiter)
+            lf.sink_csv(output_path, separator=delimiter, quote_style="necessary")
         
         logger.info("Export completed.")
         
@@ -120,7 +120,7 @@ def export_aggregated_dataset(output_path: str, delimiter: str = ","):
                 year_out = base_dir / f"{base_stem}_{year}{base_ext}"
                 
                 # Collect & Write
-                aggregated.collect(streaming=True).write_csv(year_out, separator=delimiter)
+                aggregated.collect(engine="streaming").write_csv(year_out, separator=delimiter, quote_style="necessary")
                 
                 # Cleanup Polars cache if needed
                 del aggregated
@@ -159,7 +159,7 @@ def get_aggregated_year_lazyframe(year: int) -> pl.LazyFrame:
         "DESCRIZIONE_PROGETTO", "DATA_CONCESSIONE", "CUP", 
         "DENOMINAZIONE_BENEFICIARIO", "CODICE_FISCALE_BENEFICIARIO", 
         "DES_TIPO_BENEFICIARIO", "REGIONE_BENEFICIARIO", 
-        "FILE_SOURCE", "COR"
+        "FILE_SOURCE", "COR", "ANNO"
     ]
     
     aiuti_year_path = DATA_DIR / "aiuti" / f"ANNO={year}"
@@ -324,7 +324,7 @@ def count_project_descriptions(output_path: str = None, limit: int = None):
             logger.info(f"Saving counts to {output_path}...")
             # Automatically create parent directories to avoid OS error 2
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-            result_df.write_csv(output_path)
+            result_df.write_csv(output_path, quote_style="necessary")
             logger.info("Save completed.")
         else:
             print(result_df)
