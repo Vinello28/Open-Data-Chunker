@@ -104,9 +104,10 @@ def export(table, format, output, delimiter):
 @cli.command()
 @click.option('--output', '-o', required=True, help='Output CSV file path')
 @click.option('--delimiter', '-d', default=',', help='Delimiter for CSV')
-def export_aggregated(output, delimiter):
+@click.option('--cup-only', is_flag=True, default=False, help='Export only records with a valid CUP (excludes null, empty, n.d.)')
+def export_aggregated(output, delimiter, cup_only):
     """Export aggregated dataset (AIUTI + COMP + STRUM) to CSV"""
-    export_aggregated_dataset(output, delimiter)
+    export_aggregated_dataset(output, delimiter, cup_filter=cup_only)
 
 
 from .classifier import classify_and_export

@@ -73,10 +73,11 @@ def export_dataset(table: str, format: str, output_path: str, delimiter: str = "
     except Exception as e:
         logger.error(f"Export error: {e}")
 
-def export_aggregated_dataset(output_path: str, delimiter: str = ","):
+def export_aggregated_dataset(output_path: str, delimiter: str = ",", cup_filter: bool = False):
     """
     Esporta il dataset aggregato unendo AIUTI, COMPONENTI e STRUMENTI.
     Esegue join e aggregazioni per produrre una riga per ogni AIUTO con totali calcolati.
+    Se cup_filter=True, esporta solo i record con CUP effettivamente valorizzato.
     """
     try:
         logger.info("Starting aggregated export...")
@@ -115,6 +116,14 @@ def export_aggregated_dataset(output_path: str, delimiter: str = ","):
                 aggregated = get_aggregated_year_lazyframe(year)
                 if aggregated is None:
                     continue
+                
+                # Filtro CUP: escludi null, vuoti e 'n.d.'
+                if cup_filter:
+                    aggregated = aggregated.filter(
+                        pl.col("CUP").is_not_null() & 
+                        (pl.col("CUP") != "") & 
+                        (pl.col("CUP") != "n.d.")
+                    )
                 
                 # Output filename
                 year_out = base_dir / f"{base_stem}_{year}{base_ext}"
