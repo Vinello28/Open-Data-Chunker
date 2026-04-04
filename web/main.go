@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -77,11 +78,29 @@ func getJob(id string) *ExportJob {
 }
 
 // ---------------------------------------------------------------------------
-// DuckDB helpers
+// DuckDB — persistent connection pool
 // ---------------------------------------------------------------------------
 
-func openDuckDB() (*sql.DB, error) {
-	return sql.Open("duckdb", "")
+// Global DB pool, initialized once at startup in main().
+// database/sql handles connection pooling internally.
+var dbPool *sql.DB
+
+func initDuckDB() {
+	var err error
+	dbPool, err = sql.Open("duckdb", "")
+	if err != nil {
+		log.Fatalf("Failed to open DuckDB: %v", err)
+	}
+
+	// Configure DuckDB to use all available CPU cores
+	numThreads := runtime.NumCPU()
+	_, err = dbPool.Exec(fmt.Sprintf("SET threads = %d", numThreads))
+	if err != nil {
+		log.Printf("Warning: could not set threads: %v", err)
+	}
+
+	// Increase memory limit (default is 80%% of RAM which is fine)
+	log.Printf("DuckDB initialized: %d threads", numThreads)
 }
 
 // discoverYears returns sorted list of years found in a Hive-partitioned dir.
@@ -127,19 +146,12 @@ func handleTables(w http.ResponseWriter, r *http.Request) {
 	tables := []string{"aiuti", "componenti", "strumenti"}
 	var infos []TableInfo
 
-	db, err := openDuckDB()
-	if err != nil {
-		jsonError(w, "duckdb open: "+err.Error(), 500)
-		return
-	}
-	defer db.Close()
-
 	for _, t := range tables {
 		tDir := filepath.Join(dataDir, t)
 		years := discoverYears(tDir)
 		var count int64
 		glob := filepath.Join(tDir, "**", "*.parquet")
-		row := db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM read_parquet('%s', union_by_name=true)", glob))
+		row := dbPool.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM read_parquet('%s', union_by_name=true)", glob))
 		_ = row.Scan(&count) // ignore error if no files
 		infos = append(infos, TableInfo{Name: t, Years: years, Count: count})
 	}
@@ -168,14 +180,7 @@ func handleSchema(w http.ResponseWriter, r *http.Request) {
 
 	glob := filepath.Join(dataDir, table, "**", "*.parquet")
 
-	db, err := openDuckDB()
-	if err != nil {
-		jsonError(w, "duckdb: "+err.Error(), 500)
-		return
-	}
-	defer db.Close()
-
-	rows, err := db.Query(fmt.Sprintf("DESCRIBE SELECT * FROM read_parquet('%s', union_by_name=true) LIMIT 0", glob))
+	rows, err := dbPool.Query(fmt.Sprintf("DESCRIBE SELECT * FROM read_parquet('%s', union_by_name=true) LIMIT 0", glob))
 	if err != nil {
 		jsonError(w, "schema error: "+err.Error(), 500)
 		return
@@ -301,19 +306,12 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	db, err := openDuckDB()
-	if err != nil {
-		jsonError(w, "duckdb: "+err.Error(), 500)
-		return
-	}
-	defer db.Close()
-
 	start := time.Now()
 
 	// Wrap query with limit for preview
 	wrappedSQL := fmt.Sprintf("SELECT * FROM (%s) sub LIMIT %d", req.SQL, previewLimit+1)
 
-	rows, err := db.Query(wrappedSQL)
+	rows, err := dbPool.Query(wrappedSQL)
 	if err != nil {
 		jsonError(w, "query error: "+err.Error(), 400)
 		return
@@ -399,17 +397,10 @@ func handleExportCSV(w http.ResponseWriter, r *http.Request) {
 	// Ensure exports dir exists
 	os.MkdirAll(exportsDir, 0755)
 
-	db, err := openDuckDB()
-	if err != nil {
-		jsonError(w, "duckdb: "+err.Error(), 500)
-		return
-	}
-	defer db.Close()
-
 	// Use COPY TO for efficient CSV export
 	copySQL := fmt.Sprintf("COPY (%s) TO '%s' (HEADER, DELIMITER ',')", req.SQL, outPath)
 	start := time.Now()
-	_, err = db.Exec(copySQL)
+	_, err := dbPool.Exec(copySQL)
 	if err != nil {
 		jsonError(w, "export error: "+err.Error(), 400)
 		return
@@ -592,16 +583,6 @@ func runExportJob(job *ExportJob) {
 		return
 	}
 
-	db, err := openDuckDB()
-	if err != nil {
-		jobsMu.Lock()
-		job.Status = "error"
-		job.Message = "DuckDB open error: " + err.Error()
-		jobsMu.Unlock()
-		return
-	}
-	defer db.Close()
-
 	// Determine output directory and prefix based on export type
 	var outDir, prefix string
 	cupFilter := false
@@ -631,9 +612,9 @@ func runExportJob(job *ExportJob) {
 
 		var exportErr error
 		if job.Type == "classified" {
-			exportErr = exportClassifiedYear(db, year, outPath)
+			exportErr = exportClassifiedYear(dbPool, year, outPath)
 		} else {
-			exportErr = exportAggregatedYear(db, year, outPath, cupFilter)
+			exportErr = exportAggregatedYear(dbPool, year, outPath, cupFilter)
 		}
 
 		if exportErr != nil {
@@ -858,14 +839,7 @@ func handleExportCSVStream(w http.ResponseWriter, r *http.Request) {
 		fname += ".csv"
 	}
 
-	db, err := openDuckDB()
-	if err != nil {
-		jsonError(w, "duckdb: "+err.Error(), 500)
-		return
-	}
-	defer db.Close()
-
-	rows, err := db.Query(req.SQL)
+	rows, err := dbPool.Query(req.SQL)
 	if err != nil {
 		jsonError(w, "query error: "+err.Error(), 400)
 		return
@@ -972,6 +946,10 @@ func corsMiddleware(next http.Handler) http.Handler {
 // ---------------------------------------------------------------------------
 
 func main() {
+	// Initialize persistent DuckDB connection pool
+	initDuckDB()
+	defer dbPool.Close()
+
 	mux := http.NewServeMux()
 
 	// API routes
