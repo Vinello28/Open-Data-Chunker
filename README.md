@@ -3,6 +3,7 @@
 ![image](docs/images/rdm1.png)
 
 [![Python 3.12+](https://img.shields.io/badge/Python_3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Go](https://img.shields.io/badge/Go-1.24-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![Polars](https://img.shields.io/badge/Polars-0075FF?style=for-the-badge&logo=polars&logoColor=white)](https://pola.rs/)
 [![DuckDB](https://img.shields.io/badge/DuckDB-Analytical_SQL-202020?style=for-the-badge&logo=duckdb&logoColor=white)](https://duckdb.org/)
@@ -19,6 +20,7 @@ A high-performance ETL pipeline for processing large-scale XML datasets from the
 - **📦 Parquet Output** — Columnar storage with Hive-style partitioning (`ANNO=YYYY`)
 - **🔍 SQL Queries** — Interactive DuckDB-powered queries on processed datasets
 - **📤 Flexible Export** — CSV/TXT export with configurable delimiters
+- **🌐 Web UI** — Browser-based query editor and export manager (Go + DuckDB, porta `3000`)
 - **🐳 Dockerized** — Fully containerized for reproducible environments
 
 ## 🏗️ Architecture
@@ -42,6 +44,11 @@ flowchart LR
         Export["📤 export"]
     end
 
+    subgraph Web["🌐 Web UI (Go :3000)"]
+        WebQuery["🔍 Query Editor"]
+        WebExport["📤 Export Manager"]
+    end
+
     subgraph Engines
         DuckDB["🦆 DuckDB"]
         Polars["🐻‍❄️ Polars"]
@@ -50,6 +57,7 @@ flowchart LR
     XML --> Parser --> Parquet
     Parquet --> Query --> DuckDB
     Parquet --> Export --> Polars
+    Parquet --> Web --> DuckDB
 ```
 
 ### Data Model
@@ -76,7 +84,7 @@ The pipeline extracts three normalized tables from the XML:
 git clone https://github.com/yourusername/Open-Data-Chunker.git
 cd Open-Data-Chunker
 
-# Build the Docker image
+# Build all services (ETL pipeline + Web UI)
 docker compose build
 ```
 
@@ -88,6 +96,10 @@ docker compose run --rm etl python -m src.cli parse --input data/2022/OpenData_A
 
 # Parse entire data directory with 8 parallel workers
 docker compose run --rm etl python -m src.cli parse --input data/ --workers 8
+
+# Start the Web UI
+docker compose up web
+# → Open http://localhost:3000
 ```
 
 Output is written to `public/parquet/{table}/ANNO=YYYY/`.
@@ -197,7 +209,79 @@ docker compose run --rm etl python -m src.cli export-aggregated --output public/
 ```
 This will generate `public/exports/aggregated_2024.csv`, `public/exports/aggregated_2023.csv`, etc.
 
+---
+
+## 🌐 Web UI — Query & Export Interface
+
+A lightweight browser-based interface for running SQL queries, previewing results, and managing CSV exports. Built with Go + DuckDB (in-process) and a vanilla HTML/CSS/JS frontend.
+
+### Quick Start
+
+```bash
+# Build and start the web service
+docker compose build web
+docker compose up web
+
+# → Open http://localhost:3000
+```
+
+### Pages
+
+#### Query Editor (`/`)
+- SQL editor with line numbers and **Ctrl+Enter** shortcut
+- Schema inspector (columns + types for all three tables)
+- Pre-built query templates:
+  - Record count per year
+  - Top 20 beneficiaries by total amount
+  - Distribution by region
+  - Yearly totals (importo + elemento di aiuto)
+  - **Search companies by tax code / P.IVA** (IN list — edit before running)
+- Results table (preview capped at **1 000 rows**)
+- Three export options:
+  - **Esporta CSV** — saves to `public/exports/` via DuckDB `COPY TO`, then triggers download
+  - **Download CSV completo** — streams the full query result directly (no row limit)
+
+#### Export & Download (`/`)
+| Export type | Output directory | Description |
+|---|---|---|
+| **Aggregato** | `public/exports/` | Aiuti + Componenti + Strumenti aggregated (all records) |
+| **Aggregato CUP** | `public/exports/` | Same, filtered to records with a valid CUP |
+| **Classificato AI/Non-AI** | `public/classified/` | Aggregated + classification join from cache |
+
+Each generates one CSV per year with a real-time progress bar. Files appear in the **File disponibili** list as soon as each year completes and can be downloaded immediately.
+
+> **Note:** The classified export requires a pre-built classification cache at `public/cache/classification_cache.parquet`.
+> Build it with: `docker compose run --rm etl python -m src.cli build-cache --output public/cache/classification_cache.parquet`
+
+### REST API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/tables` | Available tables with row counts and year partitions |
+| `GET` | `/api/schema/{table}` | Column names and types |
+| `GET` | `/api/templates` | Pre-built SQL query templates |
+| `POST` | `/api/query` | Execute SQL (preview, max 1 000 rows). Body: `{"sql":"...","limit":1000}` |
+| `POST` | `/api/export/csv` | Save query result to `public/exports/` and return download URL |
+| `POST` | `/api/export/csv/stream` | Stream full query result as CSV response (no row limit) |
+| `GET` | `/api/exports` | List all CSV files in exports + classified directories |
+| `GET` | `/api/exports/download?file=&cat=` | Download a specific file |
+| `POST` | `/api/export/generate` | Start async export job. Body: `{"type":"aggregated|aggregated_cup|classified"}` |
+| `GET` | `/api/export/status/{id}` | Poll job progress |
+
+### Environment Variables (web service)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATA_DIR` | Path to Parquet datasets | `/app/public/parquet` |
+| `EXPORTS_DIR` | Path to CSV exports | `/app/public/exports` |
+| `CLASSIFIED_DIR` | Path to classified CSVs | `/app/public/classified` |
+| `CACHE_DIR` | Path to classification cache | `/app/public/cache` |
+| `PORT` | HTTP listen port | `3000` |
+
+---
+
 ### `classify` — AI/Non-AI Classification
+
 
 Classifies project descriptions using the `inference-service`.
 
@@ -340,16 +424,25 @@ Open-Data-Chunker/
 │   ├── classifier.py             # AI/Non-AI classification (per-row)
 │   ├── classification_cache.py   # Cached classification (unique descriptions)
 │   └── models.py                 # PyArrow schema definitions
+├── web/                          # 🌐 Web UI service (Go)
+│   ├── main.go                   # HTTP server + REST API (DuckDB in-process)
+│   ├── go.mod / go.sum           # Go module dependencies
+│   ├── Dockerfile                # Multi-stage build (golang:1.24 → debian-slim)
+│   └── static/
+│       ├── index.html            # SPA layout (sidebar + 2 pages)
+│       ├── style.css             # Dark theme design system
+│       └── app.js                # Frontend logic
 ├── data/               # Input XML files (gitignored)
 ├── public/
 │   ├── parquet/        # Output Parquet datasets
 │   ├── cache/          # Classification cache
+│   ├── classified/     # Classified CSV exports
 │   └── exports/        # Exported CSV/TXT files
 ├── tests/
 ├── docs/
 │   └── usage.md
-├── Dockerfile
-├── docker-compose.yml
+├── Dockerfile          # ETL pipeline image
+├── docker-compose.yml  # ETL + Web UI + Inference service
 ├── pyproject.toml
 └── requirements.txt
 ```
