@@ -10,6 +10,21 @@ services:
     command: [ "tail", "-f", "/dev/null" ]
     # Per eseguire comandi specifici: docker compose run --rm etl ...
 
+  web:
+    build:
+      context: ./web
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./public:/app/public
+    environment:
+      - DATA_DIR=/app/public/parquet
+      - EXPORTS_DIR=/app/public/exports
+      - CLASSIFIED_DIR=/app/public/classified
+      - CACHE_DIR=/app/public/cache
+      - PORT=3000
+    restart: unless-stopped
+
   inference-service:
     build:
       context: ./inference-service
