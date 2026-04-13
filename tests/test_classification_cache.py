@@ -13,6 +13,8 @@ from src.classification_cache import (
     build_classification_cache,
     load_classification_cache,
     classify_with_cache,
+    build_multiclass_cache,
+    classify_with_multiclass_cache,
 )
 
 
@@ -209,3 +211,178 @@ class TestClassifyWithCache:
         """Verifica che un FileNotFoundError venga sollevato se la cache non esiste."""
         with pytest.raises(FileNotFoundError):
             load_classification_cache(str(tmp_path / "nonexistent.parquet"))
+
+
+def _mock_post_multiclass(url, json, timeout=60):
+    """Mock del POST per inference multiclasse."""
+    texts = json["texts"]
+    predictions = []
+    for text in texts:
+        if "AI" in text.upper():
+            predictions.append({"label": "Healthcare AI", "confidence": 0.92})
+        else:
+            predictions.append({"label": "Generic use", "confidence": 0.75})
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status = lambda: None
+    mock_resp.json.return_value = {"predictions": predictions}
+    return mock_resp
+
+
+class TestBuildMulticlassCache:
+    def test_creates_multiclass_cache_from_binary(self, tmp_path):
+        """Cache binaria con 2 AI + 1 NON_AI → cache multiclasse con 2 record."""
+        # Crea cache binaria fittizia
+        binary_cache_path = tmp_path / "cache" / "classification_cache.parquet"
+        binary_cache_path.parent.mkdir(parents=True)
+
+        df_binary = pl.DataFrame({
+            "DESCRIZIONE_PROGETTO": ["Progetto AI", "Progetto AI avanzato", "Progetto Generico"],
+            "CLASSIFICAZIONE": ["AI", "AI", "NON_AI"],
+            "CLASSIFICAZIONE_CONFIDENZA": [0.95, 0.90, 0.88],
+        })
+        df_binary.write_parquet(binary_cache_path)
+
+        multiclass_cache_path = tmp_path / "cache" / "multiclass_cache.parquet"
+
+        with patch("src.classification_cache.requests.post", side_effect=_mock_post_multiclass):
+            build_multiclass_cache(
+                output_path=str(multiclass_cache_path),
+                binary_cache_path=str(binary_cache_path),
+                batch_size=10,
+                inference_url="http://fake:8080/classify",
+            )
+
+        assert multiclass_cache_path.exists()
+
+        df_cache = pl.read_parquet(multiclass_cache_path)
+
+        # Solo 2 descrizioni AI
+        assert len(df_cache) == 2
+
+        # Colonne corrette
+        assert "DESCRIZIONE_PROGETTO" in df_cache.columns
+        assert "CLASSIFICAZIONE_MULTICLASS" in df_cache.columns
+        assert "CLASSIFICAZIONE_MULTICLASS_CONFIDENZA" in df_cache.columns
+
+        # Verifica che "Progetto Generico" NON sia presente
+        assert len(df_cache.filter(pl.col("DESCRIZIONE_PROGETTO") == "Progetto Generico")) == 0
+
+    def test_no_ai_records_skips(self, tmp_path):
+        """Cache binaria tutta NON_AI → nessun file creato."""
+        binary_cache_path = tmp_path / "cache" / "classification_cache.parquet"
+        binary_cache_path.parent.mkdir(parents=True)
+
+        df_binary = pl.DataFrame({
+            "DESCRIZIONE_PROGETTO": ["Progetto Generico", "Altro progetto"],
+            "CLASSIFICAZIONE": ["NON_AI", "NON_AI"],
+            "CLASSIFICAZIONE_CONFIDENZA": [0.88, 0.92],
+        })
+        df_binary.write_parquet(binary_cache_path)
+
+        multiclass_cache_path = tmp_path / "cache" / "multiclass_cache.parquet"
+
+        build_multiclass_cache(
+            output_path=str(multiclass_cache_path),
+            binary_cache_path=str(binary_cache_path),
+            batch_size=10,
+            inference_url="http://fake:8080/classify",
+        )
+
+        assert not multiclass_cache_path.exists()
+
+
+class TestClassifyWithMulticlassCache:
+    def test_multiclass_join_produces_correct_csv(self, mock_aiuti_data, tmp_path):
+        """Verifica che l'export abbia tutte e 4 le colonne di classificazione."""
+        # Crea cache binaria
+        binary_cache_path = tmp_path / "cache" / "classification_cache.parquet"
+        binary_cache_path.parent.mkdir(parents=True)
+
+        df_binary = pl.DataFrame({
+            "DESCRIZIONE_PROGETTO": ["Progetto AI", "Progetto Generico"],
+            "CLASSIFICAZIONE": ["AI", "NON_AI"],
+            "CLASSIFICAZIONE_CONFIDENZA": [0.95, 0.88],
+        })
+        df_binary.write_parquet(binary_cache_path)
+
+        # Crea cache multiclasse (solo per "Progetto AI")
+        multiclass_cache_path = tmp_path / "cache" / "multiclass_cache.parquet"
+
+        df_multiclass = pl.DataFrame({
+            "DESCRIZIONE_PROGETTO": ["Progetto AI"],
+            "CLASSIFICAZIONE_MULTICLASS": ["Healthcare AI"],
+            "CLASSIFICAZIONE_MULTICLASS_CONFIDENZA": [0.92],
+        })
+        df_multiclass.write_parquet(multiclass_cache_path)
+
+        output_dir = tmp_path / "classified_multi"
+
+        with patch("src.exporter.DATA_DIR", mock_aiuti_data), \
+             patch("src.classification_cache.DATA_DIR", mock_aiuti_data):
+            classify_with_multiclass_cache(
+                output_path=str(output_dir),
+                binary_cache_path=str(binary_cache_path),
+                multiclass_cache_path=str(multiclass_cache_path),
+            )
+
+        out_file = output_dir / "classified_multiclass_aiuti_2023.csv"
+        assert out_file.exists()
+
+        df_result = pl.read_csv(out_file, infer_schema_length=10000)
+
+        # Tutte e 5 le righe originali
+        assert len(df_result) == 5
+
+        # Tutte e 4 le colonne di classificazione presenti
+        assert "CLASSIFICAZIONE" in df_result.columns
+        assert "CLASSIFICAZIONE_CONFIDENZA" in df_result.columns
+        assert "CLASSIFICAZIONE_MULTICLASS" in df_result.columns
+        assert "CLASSIFICAZIONE_MULTICLASS_CONFIDENZA" in df_result.columns
+
+        # Verifica label binaria corretta
+        ai_rows = df_result.filter(pl.col("DESCRIZIONE_PROGETTO") == "Progetto AI")
+        assert len(ai_rows) == 3
+        assert all(l == "AI" for l in ai_rows["CLASSIFICAZIONE"].to_list())
+
+        # Verifica label multiclasse per AI
+        assert all(l == "Healthcare AI" for l in ai_rows["CLASSIFICAZIONE_MULTICLASS"].to_list())
+
+    def test_non_ai_records_have_null_multiclass(self, mock_aiuti_data, tmp_path):
+        """Record NON-AI devono avere null nelle colonne multiclasse."""
+        binary_cache_path = tmp_path / "cache" / "classification_cache.parquet"
+        binary_cache_path.parent.mkdir(parents=True)
+
+        df_binary = pl.DataFrame({
+            "DESCRIZIONE_PROGETTO": ["Progetto AI", "Progetto Generico"],
+            "CLASSIFICAZIONE": ["AI", "NON_AI"],
+            "CLASSIFICAZIONE_CONFIDENZA": [0.95, 0.88],
+        })
+        df_binary.write_parquet(binary_cache_path)
+
+        multiclass_cache_path = tmp_path / "cache" / "multiclass_cache.parquet"
+        df_multiclass = pl.DataFrame({
+            "DESCRIZIONE_PROGETTO": ["Progetto AI"],
+            "CLASSIFICAZIONE_MULTICLASS": ["Healthcare AI"],
+            "CLASSIFICAZIONE_MULTICLASS_CONFIDENZA": [0.92],
+        })
+        df_multiclass.write_parquet(multiclass_cache_path)
+
+        output_dir = tmp_path / "classified_multi"
+
+        with patch("src.exporter.DATA_DIR", mock_aiuti_data), \
+             patch("src.classification_cache.DATA_DIR", mock_aiuti_data):
+            classify_with_multiclass_cache(
+                output_path=str(output_dir),
+                binary_cache_path=str(binary_cache_path),
+                multiclass_cache_path=str(multiclass_cache_path),
+            )
+
+        df_result = pl.read_csv(output_dir / "classified_multiclass_aiuti_2023.csv", infer_schema_length=10000)
+
+        non_ai_rows = df_result.filter(pl.col("DESCRIZIONE_PROGETTO") == "Progetto Generico")
+        assert len(non_ai_rows) == 2
+        # Le colonne multiclasse devono essere null per i NON-AI
+        assert all(v is None for v in non_ai_rows["CLASSIFICAZIONE_MULTICLASS"].to_list())
+        assert all(v is None for v in non_ai_rows["CLASSIFICAZIONE_MULTICLASS_CONFIDENZA"].to_list())

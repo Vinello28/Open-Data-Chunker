@@ -409,8 +409,154 @@ python -m src.cli classify-cached \
   --year 2024
 ```
 
-> **💡 Recommended pipeline:** Run `clean-text` → `build-cache` → `classify-cached` for optimal performance.
+> **💡 Recommended pipeline (binary):** Run `clean-text` → `build-cache` → `classify-cached` for optimal performance.
 > If there are 2M records but only 50K unique descriptions, this achieves a ~40x speedup over `classify`.
+
+---
+
+### `build-multiclass-cache` — Build Multiclass Classification Cache
+
+Takes only the records classified as **"AI"** from the binary cache and reclassifies them using the multiclass inference model (9 AI application sectors). This second cache is intentionally small — typically only a fraction of all unique descriptions.
+
+**Prerequisites:** Binary cache already built (`build-cache`) and the multiclass inference-service running.
+
+```bash
+docker compose run --rm etl python -m src.cli build-multiclass-cache [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-o, --output` | Output Parquet cache file path | required |
+| `-c, --binary-cache` | Path to existing binary classification cache | required |
+| `-b, --batch-size` | Batch size for inference | `32` |
+| `--inference-url` | Multiclass inference service URL | `http://inference-service:8080/classify` |
+
+**Example:**
+```bash
+docker compose run --rm etl python -m src.cli build-multiclass-cache \
+  --output public/cache/multiclass_cache.parquet \
+  --binary-cache public/cache/classification_cache.parquet \
+  --batch-size 64
+```
+
+---
+
+### `classify-multiclass` — Export with Binary + Multiclass Labels
+
+Performs a **double left join** (binary cache + multiclass cache) per year and exports CSV files with all four classification columns. NON-AI records have `null` in the multiclass columns.
+
+```bash
+docker compose run --rm etl python -m src.cli classify-multiclass [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-o, --output` | Output directory for classified CSVs | required |
+| `--binary-cache` | Path to binary classification cache | required |
+| `--multiclass-cache` | Path to multiclass classification cache | required |
+| `-y, --year` | Specific year to process (optional) | — (all) |
+| `-w, --workers` | Number of threads for parallel join+export | `4` |
+
+**Output columns added:**
+
+| Column | Description | NON-AI value |
+|--------|-------------|--------------|
+| `CLASSIFICAZIONE` | Binary label (`AI` / `NON_AI` / `UNKNOWN`) | `NON_AI` |
+| `CLASSIFICAZIONE_CONFIDENZA` | Binary confidence score | — |
+| `CLASSIFICAZIONE_MULTICLASS` | AI sector label (9 classes) | `null` |
+| `CLASSIFICAZIONE_MULTICLASS_CONFIDENZA` | Multiclass confidence score | `null` |
+
+**Example:**
+```bash
+docker compose run --rm etl python -m src.cli classify-multiclass \
+  --output public/classified \
+  --binary-cache public/cache/classification_cache.parquet \
+  --multiclass-cache public/cache/multiclass_cache.parquet \
+  --workers 4
+```
+
+Output files: `classified_multiclass_aiuti_{year}.csv`
+
+> **💡 Full multiclass pipeline:** `clean-text` → `build-cache` → `build-multiclass-cache` → `classify-multiclass`
+
+---
+
+## 🤖 Multiclass Classification Pipeline
+
+The recommended end-to-end flow for producing CSVs with both binary (AI/NON-AI) and multiclass (AI sector) labels.
+
+### Architecture
+
+```
+Binary cache                Multiclass cache
+(all unique descriptions)   (AI descriptions only)
+         │                          │
+         └──────────┬───────────────┘
+                    ▼
+             Double LEFT JOIN
+             (per year, multithreaded)
+                    │
+                    ▼
+    classified_multiclass_aiuti_{year}.csv
+```
+
+### Automated Script
+
+The `run_multiclass_pipeline.sh` script orchestrates the full pipeline:
+
+```bash
+# Training + inferenza (defaults: data-source=txt, GPU 5)
+./run_multiclass_pipeline.sh
+
+# Training da CSV + export ONNX + serve + build cache + export CSV
+./run_multiclass_pipeline.sh \
+  --data-source csv \
+  --csv-path inference-service/public/multiclass2_augmented.csv \
+  --export-onnx \
+  --run-etl
+
+# Salta il training (modello già addestrato) + solo ETL
+./run_multiclass_pipeline.sh --skip-training --run-etl
+```
+
+**Opzioni principali:**
+
+| Flag | Descrizione | Default |
+|------|-------------|---------|
+| `--data-source` | Sorgente training: `txt`, `csv`, `distillation` | `txt` |
+| `--csv-path` | Path CSV training (se `--data-source csv`) | — |
+| `--teacher-url` | URL LLM teacher per distillation | `http://localhost:1234/v1/chat/completions` |
+| `--export-onnx` | Esporta modello in ONNX dopo training | off |
+| `--gpu-id` | GPU da usare nei container | `5` |
+| `--skip-training` | Salta il training | off |
+| `--run-etl` | Esegui build cache + export CSV | off |
+| `--batch-size` | Batch size ETL inference | `64` |
+| `--workers` | Thread export parallelo | `4` |
+
+### Manual Step-by-Step
+
+```bash
+# 1. Pulizia testi (rimuove virgole/newline dai campi)
+docker compose run --rm etl python -m src.cli clean-text
+
+# 2. Build cache binaria (AI / NON-AI)
+docker compose run --rm etl python -m src.cli build-cache \
+  --output public/cache/classification_cache.parquet \
+  --batch-size 64
+
+# 3. Build cache multiclasse (solo record AI → 9 settori)
+docker compose run --rm etl python -m src.cli build-multiclass-cache \
+  --output public/cache/multiclass_cache.parquet \
+  --binary-cache public/cache/classification_cache.parquet \
+  --batch-size 64
+
+# 4. Export CSV con tutte le etichette
+docker compose run --rm etl python -m src.cli classify-multiclass \
+  --output public/classified \
+  --binary-cache public/cache/classification_cache.parquet \
+  --multiclass-cache public/cache/multiclass_cache.parquet \
+  --workers 4
+```
 
 ## 📁 Project Structure
 
@@ -422,8 +568,13 @@ Open-Data-Chunker/
 │   ├── parser.py                 # XML parsing with CleanFileInputStream
 │   ├── exporter.py               # Query execution & export logic
 │   ├── classifier.py             # AI/Non-AI classification (per-row)
-│   ├── classification_cache.py   # Cached classification (unique descriptions)
+│   ├── classification_cache.py   # Cached classification (unique descriptions, binary + multiclass)
 │   └── models.py                 # PyArrow schema definitions
+├── inference-service/            # 🤖 Git submodule (Pack-a-Punch classifier)
+│   ├── scripts/train.py          # Training entrypoint
+│   ├── scripts/serve.py          # Inference server entrypoint
+│   ├── src/                      # Model, training, inference code
+│   └── docker/docker-compose.yml # Trainer + classifier services
 ├── web/                          # 🌐 Web UI service (Go)
 │   ├── main.go                   # HTTP server + REST API (DuckDB in-process)
 │   ├── go.mod / go.sum           # Go module dependencies
@@ -435,14 +586,15 @@ Open-Data-Chunker/
 ├── data/               # Input XML files (gitignored)
 ├── public/
 │   ├── parquet/        # Output Parquet datasets
-│   ├── cache/          # Classification cache
+│   ├── cache/          # classification_cache.parquet + multiclass_cache.parquet
 │   ├── classified/     # Classified CSV exports
 │   └── exports/        # Exported CSV/TXT files
 ├── tests/
 ├── docs/
 │   └── usage.md
-├── Dockerfile          # ETL pipeline image
-├── docker-compose.yml  # ETL + Web UI + Inference service
+├── run_multiclass_pipeline.sh    # Script orchestrazione training → inferenza → ETL
+├── Dockerfile                    # ETL pipeline image
+├── docker-compose.yml            # ETL + Web UI + Inference service
 ├── pyproject.toml
 └── requirements.txt
 ```

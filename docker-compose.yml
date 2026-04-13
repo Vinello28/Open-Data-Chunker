@@ -32,13 +32,29 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./inference-service:/app
+      # Mount granulari — non montare tutto /app (sovrascrive i file del container)
+      - ./inference-service/src/models:/app/src/models:ro
+      - ./inference-service/config:/app/config:ro
+      - ./inference-service/src/inference:/app/src/inference:ro
+      - ./inference-service/src/training:/app/src/training:ro
     environment:
       - INFERENCE_BACKEND=pytorch
+      - PAP_INFERENCE__BATCH_SIZE=64
+      - PAP_INFERENCE__DEVICE=cuda
+      - PAP_INFERENCE__NUM_SESSIONS=1
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              device_ids: ['5']
               capabilities: [ gpu ]
+    cpus: 32
+    shm_size: '4g'
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
