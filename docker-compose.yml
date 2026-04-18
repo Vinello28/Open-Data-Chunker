@@ -17,9 +17,18 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./inference-service:/app
+      - ./inference-service/src/models:/app/src/models:ro
+      - ./inference-service/config:/app/config:ro
+      - ./inference-service/src/inference:/app/src/inference:ro
     environment:
       - INFERENCE_BACKEND=pytorch
+      - PAP_INFERENCE__DEVICE=cuda
+      - OPENBLAS_NUM_THREADS=24
+      - OMP_NUM_THREADS=24
+      - MKL_NUM_THREADS=24
+    ipc: host
+    security_opt:
+      - seccomp:unconfined
     deploy:
       resources:
         reservations:
