@@ -204,6 +204,7 @@ def flush_batches(aiuti: List[dict], componenti: List[dict], strumenti: List[dic
     if aiuti:
         df = pl.DataFrame(aiuti, schema=None, orient="row") 
         table = df.to_arrow()
+        table = table.cast(SCHEMA_AIUTI)
         pq.write_to_dataset(
             table,
             root_path=str(base_path / "aiuti"),
@@ -214,6 +215,7 @@ def flush_batches(aiuti: List[dict], componenti: List[dict], strumenti: List[dic
     if componenti:
         df = pl.DataFrame(componenti, orient="row")
         table = df.to_arrow()
+        table = table.cast(SCHEMA_COMPONENTI)
         pq.write_to_dataset(
             table,
             root_path=str(base_path / "componenti"),
@@ -224,6 +226,7 @@ def flush_batches(aiuti: List[dict], componenti: List[dict], strumenti: List[dic
     if strumenti:
         df = pl.DataFrame(strumenti, orient="row")
         table = df.to_arrow()
+        table = table.cast(SCHEMA_STRUMENTI)
         pq.write_to_dataset(
             table,
             root_path=str(base_path / "strumenti"),

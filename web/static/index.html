@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Data Chunker — Query & Export</title>
+    <meta name="description" content="Web interface for querying and exporting Italian RNA Open Data (Registro Nazionale degli Aiuti). SQL queries, CSV export, interactive data preview.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <span class="logo-icon">◆</span>
+                <div class="logo-text">
+                    <span class="logo-title">Open Data Chunker</span>
+                    <span class="logo-subtitle">RNA Query Interface</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-nav">
+            <button class="nav-item active" data-page="query" id="nav-query">
+                <span class="nav-icon">⌘</span>
+                <span class="nav-label">Query Editor</span>
+            </button>
+            <button class="nav-item" data-page="exports" id="nav-exports">
+                <span class="nav-icon">↓</span>
+                <span class="nav-label">Export & Download</span>
+            </button>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="sidebar-stats" id="sidebar-stats">
+                <div class="stat-item" id="stat-tables">
+                    <span class="stat-value">—</span>
+                    <span class="stat-label">Tabelle</span>
+                </div>
+                <div class="stat-item" id="stat-records">
+                    <span class="stat-value">—</span>
+                    <span class="stat-label">Record totali</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Query Page -->
+        <section class="page active" id="page-query">
+            <header class="page-header">
+                <h1>Query Editor</h1>
+                <p class="page-desc">Esegui query SQL sui dataset Parquet tramite DuckDB. I risultati sono limitati a 1000 righe in anteprima.</p>
+            </header>
+
+            <!-- Schema Bar -->
+            <div class="schema-bar" id="schema-bar">
+                <div class="schema-bar-header">
+                    <span class="schema-bar-title">Schema tabelle</span>
+                    <button class="schema-toggle" id="schema-toggle">▾</button>
+                </div>
+                <div class="schema-panels" id="schema-panels"></div>
+            </div>
+
+            <!-- Template Queries -->
+            <div class="templates-section" id="templates-section">
+                <div class="templates-header">
+                    <span class="templates-title">Query suggerite</span>
+                    <button class="templates-toggle" id="templates-toggle">▸</button>
+                </div>
+                <div class="templates-list hidden" id="templates-list"></div>
+            </div>
+
+            <!-- SQL Editor -->
+            <div class="editor-container">
+                <div class="editor-toolbar">
+                    <div class="editor-actions">
+                        <button class="btn btn-primary" id="btn-run" title="Esegui query (Ctrl+Enter)">
+                            <span class="btn-icon">▶</span> Esegui
+                        </button>
+                        <button class="btn btn-secondary" id="btn-export-csv" title="Esporta risultati in CSV">
+                            <span class="btn-icon">↓</span> Esporta CSV
+                        </button>
+                        <button class="btn btn-secondary" id="btn-export-stream" title="Download diretto CSV (streaming, nessun limite righe)">
+                            <span class="btn-icon">⇊</span> Download CSV completo
+                        </button>
+                    </div>
+                    <div class="editor-status" id="editor-status"></div>
+                </div>
+                <div class="editor-wrap">
+                    <div class="line-numbers" id="line-numbers">1</div>
+                    <textarea class="sql-editor" id="sql-editor" spellcheck="false" placeholder="SELECT * FROM read_parquet('public/parquet/aiuti/**/*.parquet', union_by_name=true) LIMIT 10"></textarea>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div class="results-section" id="results-section">
+                <div class="results-header" id="results-header">
+                    <span class="results-info" id="results-info">Nessuna query eseguita</span>
+                </div>
+                <div class="results-container" id="results-container">
+                    <div class="results-placeholder">
+                        <span class="placeholder-icon">⌘</span>
+                        <p>Scrivi una query SQL e premi <kbd>Ctrl+Enter</kbd> oppure clicca <strong>Esegui</strong></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Exports Page -->
+        <section class="page" id="page-exports">
+            <header class="page-header">
+                <h1>Export & Download</h1>
+                <p class="page-desc">Genera e scarica i dataset CSV pre-aggregati e classificati. Gli export vengono rigenerati dai dati Parquet ad ogni richiesta.</p>
+            </header>
+
+            <!-- Generate Section -->
+            <div class="generate-section">
+                <h2 class="section-title">Genera Export</h2>
+                <div class="generate-cards" id="generate-cards">
+                    <div class="generate-card" data-type="aggregated">
+                        <div class="card-icon">📊</div>
+                        <h3>Aggregato</h3>
+                        <p>Aiuti + Componenti + Strumenti aggregati per anno. Una riga per ogni aiuto con totali calcolati.</p>
+                        <button class="btn btn-primary btn-generate" data-type="aggregated" id="btn-gen-aggregated">
+                            <span class="btn-icon">⟳</span> Genera
+                        </button>
+                        <div class="progress-bar-container hidden" id="progress-aggregated">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progress-fill-aggregated"></div>
+                            </div>
+                            <span class="progress-text" id="progress-text-aggregated">0%</span>
+                        </div>
+                    </div>
+                    <div class="generate-card" data-type="aggregated_cup">
+                        <div class="card-icon">🏷️</div>
+                        <h3>Aggregato (solo CUP)</h3>
+                        <p>Come l'export aggregato, ma include solo record con CUP valido (esclude null, vuoti, n.d.).</p>
+                        <button class="btn btn-primary btn-generate" data-type="aggregated_cup" id="btn-gen-aggregated-cup">
+                            <span class="btn-icon">⟳</span> Genera
+                        </button>
+                        <div class="progress-bar-container hidden" id="progress-aggregated_cup">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progress-fill-aggregated_cup"></div>
+                            </div>
+                            <span class="progress-text" id="progress-text-aggregated_cup">0%</span>
+                        </div>
+                    </div>
+                    <div class="generate-card" data-type="classified">
+                        <div class="card-icon">🤖</div>
+                        <h3>Classificato AI/Non-AI</h3>
+                        <p>Dataset aggregato con classificazione AI/Non-AI basata sulla cache di classificazione pre-costruita.</p>
+                        <button class="btn btn-primary btn-generate" data-type="classified" id="btn-gen-classified">
+                            <span class="btn-icon">⟳</span> Genera
+                        </button>
+                        <div class="progress-bar-container hidden" id="progress-classified">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progress-fill-classified"></div>
+                            </div>
+                            <span class="progress-text" id="progress-text-classified">0%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Existing Files -->
+            <div class="files-section">
+                <h2 class="section-title">File disponibili</h2>
+                <div class="files-toolbar">
+                    <button class="btn btn-secondary" id="btn-refresh-files">
+                        <span class="btn-icon">⟳</span> Aggiorna lista
+                    </button>
+                    <div class="filter-group">
+                        <button class="filter-btn active" data-filter="all" id="filter-all">Tutti</button>
+                        <button class="filter-btn" data-filter="aggregated" id="filter-aggregated">Aggregati</button>
+                        <button class="filter-btn" data-filter="classified" id="filter-classified">Classificati</button>
+                    </div>
+                </div>
+                <div class="files-list" id="files-list">
+                    <div class="files-placeholder">
+                        <span class="placeholder-icon">↓</span>
+                        <p>Caricamento file in corso...</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Export modal -->
+    <div class="modal-overlay hidden" id="export-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Esporta query in CSV</h3>
+                <button class="modal-close" id="modal-close">✕</button>
+            </div>
+            <div class="modal-body">
+                <label for="export-filename">Nome file:</label>
+                <input type="text" id="export-filename" class="input" placeholder="custom_export.csv">
+                <p class="modal-hint">Il file verrà salvato nella directory exports e sarà disponibile per il download.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-cancel">Annulla</button>
+                <button class="btn btn-primary" id="modal-confirm">Esporta</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

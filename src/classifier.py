@@ -118,7 +118,7 @@ def classify_and_export(output_path: str, batch_size: int = 32, inference_url: s
             
             # Export
             out_file = output_dir / f"classified_aiuti_{year_val}.csv"
-            df_classified.write_csv(out_file)
+            df_classified.write_csv(out_file, quote_style="necessary")
             logger.info(f"Exported {out_file}")
             
         except Exception as e:

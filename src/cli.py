@@ -104,9 +104,10 @@ def export(table, format, output, delimiter):
 @cli.command()
 @click.option('--output', '-o', required=True, help='Output CSV file path')
 @click.option('--delimiter', '-d', default=',', help='Delimiter for CSV')
-def export_aggregated(output, delimiter):
+@click.option('--cup-only', is_flag=True, default=False, help='Export only records with a valid CUP (excludes null, empty, n.d.)')
+def export_aggregated(output, delimiter, cup_only):
     """Export aggregated dataset (AIUTI + COMP + STRUM) to CSV"""
-    export_aggregated_dataset(output, delimiter)
+    export_aggregated_dataset(output, delimiter, cup_filter=cup_only)
 
 
 from .classifier import classify_and_export
@@ -132,7 +133,12 @@ def count_descriptions(output, limit):
     count_project_descriptions(output, limit)
 
 
-from .classification_cache import build_classification_cache, classify_with_cache
+from .classification_cache import (
+    build_classification_cache,
+    classify_with_cache,
+    build_multiclass_cache as _build_multiclass_cache,
+    classify_with_multiclass_cache,
+)
 
 @cli.command()
 @click.option('--output', '-o', required=True, help='Output Parquet cache file path')
@@ -150,6 +156,25 @@ def build_cache(output, batch_size, inference_url):
 def classify_cached(output, cache, year, workers):
     """Classifica i progetti usando la cache pre-costruita (join veloce, multithread)"""
     classify_with_cache(output, cache_path=cache, year=year, max_workers=workers)
+
+@cli.command()
+@click.option('--output', '-o', required=True, help='Output Parquet multiclass cache file path')
+@click.option('--binary-cache', '-c', required=True, help='Path to binary classification cache Parquet file')
+@click.option('--batch-size', '-b', default=32, help='Batch size for inference')
+@click.option('--inference-url', default='http://inference-service:8080/classify', help='Multiclass inference service URL')
+def build_multiclass_cache(output, binary_cache, batch_size, inference_url):
+    """Costruisce la cache di classificazione multiclass partendo dalla cache binaria (solo record AI)"""
+    _build_multiclass_cache(output, binary_cache_path=binary_cache, batch_size=batch_size, inference_url=inference_url)
+
+@cli.command()
+@click.option('--output', '-o', required=True, help='Output directory for multiclass classified CSVs')
+@click.option('--binary-cache', required=True, help='Path to binary classification cache Parquet')
+@click.option('--multiclass-cache', required=True, help='Path to multiclass classification cache Parquet')
+@click.option('--year', '-y', type=int, required=False, help='Specific year to process (optional)')
+@click.option('--workers', '-w', default=4, help='Number of threads for parallel join+export per year')
+def classify_multiclass(output, binary_cache, multiclass_cache, year, workers):
+    """Classifica i progetti con etichette multiclass e esporta CSV (binary + multiclass)"""
+    classify_with_multiclass_cache(output, binary_cache_path=binary_cache, multiclass_cache_path=multiclass_cache, year=year, max_workers=workers)
 
 if __name__ == '__main__':
     cli()
