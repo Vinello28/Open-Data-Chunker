@@ -5,7 +5,7 @@
 % ============================================
 
 % Font Roboto
-\usepackage[sfdefault]{roboto}
+% \usepackage[sfdefault]{roboto}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
 
@@ -151,16 +151,16 @@
     
     \vspace{2cm}
     
-    \begin{tikzpicture}[scale=0.8, transform shape]
-        \node[component, fill=warnorange!30] (xml) at (0,0) {XML Files};
-        \node[component] (parser) at (4,0) {Parser};
-        \dbicon{8}{0}{Parquet}{accentgreen!30}
-        \node[component, fill=primaryblue!30] (query) at (12,0) {Query Engine};
+    % \begin{tikzpicture}[scale=0.8, transform shape]
+    %     \node[component, fill=warnorange!30] (xml) at (0,0) {XML Files};
+    %     \node[component] (parser) at (4,0) {Parser};
+    %     \dbicon{8}{0}{Parquet}{accentgreen!30}
+    %     \node[component, fill=primaryblue!30] (query) at (12,0) {Query Engine};
         
-        \draw[arrow] (xml) -- (parser);
-        \draw[arrow] (parser) -- (7.2,0);
-        \draw[arrow] (8.8,0) -- (query);
-    \end{tikzpicture}
+    %     \draw[arrow] (xml) -- (parser);
+    %     \draw[arrow] (parser) -- (7.2,0);
+    %     \draw[arrow] (8.8,0) -- (query);
+    % \end{tikzpicture}
     
     \vspace{2cm}
     

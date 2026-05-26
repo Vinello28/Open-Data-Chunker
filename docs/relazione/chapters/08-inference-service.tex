@@ -6,8 +6,9 @@ Per arricchire il dataset con informazioni relative all'adozione di nuove tecnol
 
 L'architettura dell'inference service si distingue per l'elevato livello di ottimizzazione:
 \begin{itemize}
-    \item \textbf{Modello Base:} \texttt{dbmdz/bert-base-italian-xxl-cased}. Sfruttando un modello BERT specificamente pre-addestrato sulla lingua italiana, si ottiene un'elevata precisione nell'interpretazione del contesto semantico nazionale.
-    \item \textbf{High-Performance Backend:} Il modello allenato (anche tramite knowledge distillation da grandi LLM) è esportato e servito mediante \textbf{ONNX Runtime} con supporto all'accelerazione GPU (CUDA). Ciò abbatte i tempi di inferenza a frazioni di millisecondo per iterazione.
+    \item \textbf{Modello per Classificazione Binaria:} \texttt{dbmdz/bert-base-italian-xxl-cased}. Sfruttando un modello BERT specificamente pre-addestrato sulla lingua italiana, si ottiene un'elevata precisione nell'interpretazione del contesto semantico nazionale.
+    \item \textbf{Modello per Classificazione Multiclasse:} \texttt{FacebookAI/xlm-roberta-large}. Scelto perchè il training set costruito è in lingua inglese; questo modello supporta e gestisce nativamente l'inferenza e l'addestramento multilingua.
+    \item \textbf{High-Performance Backend:} Il modello allenato (anche tramite knowledge distillation da grandi LLM) è esportato e servito mediante \textbf{PyTorch (compilato con Dynamo)} con supporto all'accelerazione GPU (CUDA). Ciò abbatte i tempi di inferenza a frazioni di millisecondo per iterazione.
     \item \textbf{Esposizione API:} Sviluppato in \textbf{FastAPI} esponendo l'endpoint REST \texttt{POST /classify}, capace di gestire inferenze in modalità \textit{batch}, riducendo l'overhead di rete tra il layer ETL e il layer di AI.
 \end{itemize}
 
