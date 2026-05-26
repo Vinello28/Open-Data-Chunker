@@ -1,0 +1,25 @@
+\chapter{Inference Service e Classificazione}
+
+\section{Architettura del Microservizio}
+
+Per arricchire il dataset con informazioni relative all'adozione di nuove tecnologie da parte delle imprese, è stato integrato un microservizio di inferenza denominato \textbf{Pack-a-Punch}. Questo componente espone funzionalità di \textit{Natural Language Processing} atte a valutare le descrizioni dei progetti per distinguere le iniziative che impiegano, sviluppano o implementano l'Intelligenza Artificiale, da quelle che non la coinvolgono.
+
+L'architettura dell'inference service si distingue per l'elevato livello di ottimizzazione:
+\begin{itemize}
+    \item \textbf{Modello Base:} \texttt{dbmdz/bert-base-italian-xxl-cased}. Sfruttando un modello BERT specificamente pre-addestrato sulla lingua italiana, si ottiene un'elevata precisione nell'interpretazione del contesto semantico nazionale.
+    \item \textbf{High-Performance Backend:} Il modello allenato (anche tramite knowledge distillation da grandi LLM) è esportato e servito mediante \textbf{ONNX Runtime} con supporto all'accelerazione GPU (CUDA). Ciò abbatte i tempi di inferenza a frazioni di millisecondo per iterazione.
+    \item \textbf{Esposizione API:} Sviluppato in \textbf{FastAPI} esponendo l'endpoint REST \texttt{POST /classify}, capace di gestire inferenze in modalità \textit{batch}, riducendo l'overhead di rete tra il layer ETL e il layer di AI.
+\end{itemize}
+
+\section{Metodologia di Estrazione e Classificazione}
+
+A causa dell'ingente volume di record (milioni di aiuti), una classificazione "per riga" avrebbe comportato inefficienze strutturali, specialmente constatando l'elevata ripetitività delle descrizioni. La metodologia implementata utilizza un approccio progressivo a \textbf{Multi-livello con Caching}, eseguito in fasi distinte:
+
+\begin{enumerate}
+    \item \textbf{Estrazione dei testi univoci:} Sfruttando il motore relazionale \texttt{DuckDB}, vengono interrogate tutte le partizioni Parquet del dataset originale per isolare unicamente le descrizioni distinte nella colonna \texttt{DESCRIZIONE\_PROGETTO}.
+    \item \textbf{Fase 1 - Classificazione Binaria:} L'endpoint \texttt{/classify} valuta l'elenco testuale deduplicato con il modello in modalità binaria. L'obiettivo è discernere i progetti strettamente legati all'impiego dell'Intelligenza Artificiale da quelli non pertinenti. I risultati, comprensivi di \textit{confidence score}, popolano una memoria temporanea (\texttt{classification\_cache.parquet}).
+    \item \textbf{Fase 2 - Classificazione Multiclasse:} Intervenendo solo sui testi identificati con il tag "AI" al passaggio precedente, il layer ETL li instrada nuovamente verso il servizio di classificazione per individuarne lo specifico ambito applicativo avvalendosi dell'inferenza multiclasse. L'output genera una seconda cache stratificata Parquet (\texttt{multiclass\_cache.parquet}).
+    \item \textbf{Aggregazione Finale (Double Left Join):} Infine, le utility contenute nel modulo \texttt{exporter.py} ricongiungono i dataset primari, aggregati parallelamente in chunk annuali con \texttt{ThreadPoolExecutor}, mediante un doppio Join con le due cache pre-costruite. I record passati al modello binario ma che sono risultati non inerenti all'AI confluiranno nell'esportazione CSV presentando i dati multiclasse settati al valore neutro di gestione (NULL / UNKNOWN). 
+\end{enumerate}
+
+Questo approccio consolida una metodologia predittiva altamente efficiente: interrogando il modello per la classificazione complessa solamente quando quella binaria accerta il coinvolgimento dell'Intelligenza Artificiale nel progetto, le performance crescono vertiginosamente evitando computazione disperata e irrilevante.
